@@ -89,11 +89,16 @@
       details.append(summary, ul)
       tree.append(details)
     }
-    // na mesma coluna do menu, depois da árvore: um banner de assinatura com botão (não é lição)
-    const banner = document.createElement('div')
-    banner.className = 'InlineBanner_container__LV'
-    banner.innerHTML = '<p>Aprenda com IA</p><button><span>Assinar o plano</span></button>'
-    document.querySelector('.course-nav-slot').append(tree, banner)
+    // banners de assinatura com botão (não são lições): um dentro da própria árvore, depois do último módulo, e
+    // outro na mesma coluna, fora da árvore
+    const inner = document.createElement('div')
+    inner.className = 'InlineBanner_container__LV'
+    inner.innerHTML = '<p>Aprenda com IA</p><button><span>Assinar o plano</span></button>'
+    tree.append(inner)
+    const outer = document.createElement('div')
+    outer.className = 'Promo_side__Q2'
+    outer.innerHTML = '<p>Certificação</p><button><span>Agendar a prova</span></button>'
+    document.querySelector('.course-nav-slot').append(tree, outer)
   }
   show()
   setTimeout(renderNav, 1500)

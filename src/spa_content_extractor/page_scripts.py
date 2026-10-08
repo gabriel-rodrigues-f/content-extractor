@@ -135,8 +135,11 @@ DISCOVER_NAV = (
   }
   const itemsIn = (container) => {
     const kept = []
+    // árvore ARIA (role=tree): só é item o que está num treeitem — um banner com botão dentro da árvore não é lição
+    const tree = !!container.querySelector('[role=treeitem]')
     for (const el of container.querySelectorAll(itemSelector)) {
       if (!shown(el) || isWrapper(el)) continue
+      if (tree && !el.closest('[role=treeitem]')) continue
       const text = ownText(el)
       // rótulo dentro de outro item (ex.: <span>/<a> dentro do <li> clicável): fica só o de fora
       const outer = el.parentElement && el.parentElement.closest(itemSelector)
