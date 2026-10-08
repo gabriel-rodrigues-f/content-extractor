@@ -117,17 +117,21 @@ class Formatter:
 
 
 def format_run(run_path: Path, project_root: Path, only: str | None = None) -> list[tuple[str, int | str]]:
+    """raw/<módulo>/<tópico>.md → knowledge/<módulo>/<tópico>.md (mesmas pastas). `only` filtra pelo caminho."""
     formatter = Formatter(project_root)
+    raw = run_path / "raw"
     out = run_path / "knowledge"
-    out.mkdir(exist_ok=True)
     results: list[tuple[str, int | str]] = []
-    for source in sorted((run_path / "raw").glob("*.md")):
-        if only and not re.search(only, source.name, re.IGNORECASE):
+    for source in sorted(raw.rglob("*.md")):
+        name = source.relative_to(raw).as_posix()
+        if only and not re.search(only, name, re.IGNORECASE):
             continue
+        target = out / source.relative_to(raw)
+        target.parent.mkdir(parents=True, exist_ok=True)
         try:
-            results.append((source.name, formatter.format_file(source, out / source.name)))
-            log.info("✓ formatado %s", source.name)
+            results.append((name, formatter.format_file(source, target)))
+            log.info("✓ formatado %s", name)
         except Exception as error:  # noqa: BLE001 — um arquivo com erro não derruba o lote; o tipo vai para o relatório
-            results.append((source.name, f"erro: {type(error).__name__}"))
-            log.warning("✗ %s: %s", source.name, type(error).__name__)
+            results.append((name, f"erro: {type(error).__name__}"))
+            log.warning("✗ %s: %s", name, type(error).__name__)
     return results

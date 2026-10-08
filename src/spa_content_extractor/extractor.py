@@ -1,5 +1,5 @@
 """Fluxo de extração: abrir → ação de entrada → percorrer o menu em profundidade (sempre do primeiro item) e, em cada
-tópico, clicar, esperar estabilizar, extrair e salvar."""
+tópico, clicar, esperar estabilizar, extrair e salvar — em pastas que repetem os grupos do menu."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
 from playwright.async_api import Error as PlaywrightError
@@ -31,6 +31,16 @@ def slugify(text: str, limit: int = 70) -> str:
     text = unicodedata.normalize("NFD", text)
     text = "".join(c for c in text if not unicodedata.combining(c)).lower()
     return (re.sub(r"[^a-z0-9]+", "-", text).strip("-")[:limit].rstrip("-")) or "sem-titulo"
+
+
+def item_file(item: NavItem) -> PurePosixPath:
+    """Arquivo do item dentro de raw/: cada grupo do menu vira uma pasta e cada tópico um .md dentro dela, numerados
+    pela posição no menu (a ordem do curso aparece em qualquer explorador de arquivos). A página do próprio grupo
+    (--include-groups) fica como `00-<grupo>.md` dentro da pasta dele."""
+    parts = [f"{number:02d}-{slugify(title, 60)}" for number, title in zip(item.position, item.path, strict=True)]
+    if item.is_group:
+        return PurePosixPath(*parts, f"00-{slugify(item.title, 60)}.md")
+    return PurePosixPath(*parts[:-1], f"{parts[-1]}.md")
 
 
 @dataclass
@@ -67,18 +77,25 @@ async def _pause(headed: bool, pause: bool) -> None:
 
 
 async def discover(config: Config, url: str, *, headed: bool, pause: bool = False) -> list[NavItem]:
-    """`spa-extract map`: percorre o menu como a extração faria (abrindo cada grupo), sem extrair conteúdo."""
+    """`spa-extract map`: percorre o menu como a extração faria (abrindo cada grupo e clicando em cada tópico, porque
+    alguns menus só mostram os subitens depois do clique), sem extrair conteúdo."""
     ensure_allowed(url, config)
     async with open_browser(config, url, headed=headed) as (context, page):
         await _open(page, url)
         page = await run_start_actions(context, page, config, config.start_click)
+        walker = MenuWalker(page, config)
         items: list[NavItem] = []
 
-        async def record(item: NavItem) -> None:
+        async def record_group(item: NavItem) -> None:
             items.append(item)
 
+        async def record_leaf(item: NavItem) -> None:
+            items.append(item)
+            await walker.click(item.path)
+            await polite_pause((config.timing.min_delay_s, config.timing.max_delay_s))
+
         try:
-            await MenuWalker(page, config).walk(on_leaf=record, on_group=record)
+            await walker.walk(on_leaf=record_leaf, on_group=record_group)
         except RuntimeError:
             return []
         await _pause(headed, pause)
@@ -144,7 +161,7 @@ async def extract(
     limit: int | None = None,
     pause: bool = False,
 ) -> RunReport:
-    """`spa-extract extract`: um .md por item do menu em output/<host>/<data>/raw, com manifesto e log."""
+    """`spa-extract extract`: um .md por tópico em output/<host>/<data>/raw/<módulo>/<unidade>/…, com manifesto."""
     out = run_dir(config, url)
     report = RunReport(url=url, started_at=datetime.now(UTC).isoformat(timespec="seconds"), output=str(out))
     ensure_allowed(url, config)
@@ -153,6 +170,7 @@ async def extract(
         page = await run_start_actions(context, page, config, config.start_click)
         walker = MenuWalker(page, config)
         state: dict[str, object] = {"previous_hash": None}
+        entries: dict[tuple[str, ...], dict] = {}  # caminho do item → entrada no manifesto
 
         async def handle(item: NavItem) -> None:
             path_text = " › ".join(item.path)
@@ -171,9 +189,11 @@ async def extract(
                         state["previous_hash"],  # type: ignore[arg-type]
                     )
                     state["previous_hash"] = digest
-                    name = f"{item.index:03d}-{slugify(item.title)}.md"
-                    (out / "raw" / name).write_text(_front_matter(item, url, location) + markdown, encoding="utf-8")
-                    entry.update(status="ok", file=f"raw/{name}", chars=len(markdown), attempts=attempt)
+                    relative = item_file(item)
+                    target = out / "raw" / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(_front_matter(item, url, location) + markdown, encoding="utf-8")
+                    entry.update(status="ok", file=f"raw/{relative}", chars=len(markdown), attempts=attempt)
                     log.info("✓ %03d %s (%s caracteres)", item.index, path_text, len(markdown))
                     break
                 except (PlaywrightError, LookupError, TimeoutError, ValueError) as error:
@@ -182,11 +202,34 @@ async def extract(
                     if attempt <= config.timing.retries:
                         await polite_pause((config.timing.min_delay_s, config.timing.max_delay_s))
             report.items.append(entry)
+            entries[item.path] = entry
             report.save(out / "manifest.json")
             await polite_pause((config.timing.min_delay_s, config.timing.max_delay_s))
 
+        async def promoted(item: NavItem) -> None:
+            """O "tópico" revelou subitens ao ser clicado: é uma pasta. O arquivo dele vira a página do grupo
+            (--include-groups) ou sai do resultado."""
+            entry = entries.pop(item.path, None)
+            if entry is None:
+                return
+            old = out / entry["file"] if entry.get("file") else None
+            if config.selectors.include_groups and old and old.exists():
+                relative = item_file(item)  # agora é grupo: <pasta>/00-<grupo>.md
+                (out / "raw" / relative).parent.mkdir(parents=True, exist_ok=True)
+                old.replace(out / "raw" / relative)
+                entry["file"] = f"raw/{relative}"
+            else:
+                if old:
+                    old.unlink(missing_ok=True)
+                report.items.remove(entry)
+            report.save(out / "manifest.json")
+
         try:
-            await walker.walk(on_leaf=handle, on_group=handle if config.selectors.include_groups else None)
+            await walker.walk(
+                on_leaf=handle,
+                on_group=handle if config.selectors.include_groups else None,
+                on_promoted=promoted,
+            )
         except _LimitReached:
             log.info("limite de %s item(ns) atingido", limit)
         await _pause(headed, pause)

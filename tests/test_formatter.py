@@ -50,3 +50,23 @@ def test_sem_chave_explica_o_que_fazer(tmp_path, monkeypatch):
         assert "create-local-ai-core-key.sh" in str(error)
     else:
         raise AssertionError("deveria exigir a service key")
+
+
+def test_formatacao_repete_as_pastas_do_raw(tmp_path, monkeypatch):
+    class FakeFormatter:
+        def __init__(self, project_root):
+            pass
+
+        def format_file(self, source, target):
+            target.write_text(source.read_text(encoding="utf-8").upper(), encoding="utf-8")
+            return 1
+
+    monkeypatch.setattr(formatter, "Formatter", FakeFormatter)
+    run = tmp_path / "run"
+    (run / "raw" / "01-modulo" / "02-unidade").mkdir(parents=True)
+    (run / "raw" / "01-modulo" / "01-licao.md").write_text("um", encoding="utf-8")
+    (run / "raw" / "01-modulo" / "02-unidade" / "01-licao.md").write_text("dois", encoding="utf-8")
+
+    results = formatter.format_run(run, tmp_path, only="unidade")
+    assert results == [("01-modulo/02-unidade/01-licao.md", 1)]
+    assert (run / "knowledge" / "01-modulo" / "02-unidade" / "01-licao.md").read_text(encoding="utf-8") == "DOIS"

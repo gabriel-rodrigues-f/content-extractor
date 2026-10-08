@@ -36,7 +36,9 @@ class Selectors:
     )
     # Abrir grupos recolhidos (módulos → unidades → lições), nível por nível, até não aparecer item novo.
     expand_collapsed: bool = True
-    # O que conta como "grupo fechado" no menu. AJUSTE acrescentando a classe do alvo (ex.: ".chevron-closed").
+    # Marca extra de grupo (cabeçalho que abre subitens = pasta na saída), no próprio item ou num ícone dentro dele.
+    # Os grupos já são reconhecidos por aria-expanded, data-state, <details>, sublista no mesmo <li> e pelo clique que
+    # revela subitens. AJUSTE acrescentando a classe do alvo (ex.: ".chevron-right") se um módulo virar arquivo.
     expanders: str = "[aria-expanded=false], [data-state=closed], .collapsed, .is-collapsed"
     max_expand_rounds: int = 10
     # Também extrair a página do próprio grupo (quando o módulo tem uma visão geral própria).

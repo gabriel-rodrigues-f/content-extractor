@@ -3,7 +3,10 @@ seus tópicos antes de passar ao próximo — como uma pessoa faria. Funciona co
 o outro) e com players que abrem na última lição acessada: a ordem vem do menu, não de onde o player parou.
 
 Cada item é identificado pelo CAMINHO de títulos (Módulo › Unidade › Lição): reencontrado a cada passo, porque o DOM
-de uma SPA é redesenhado o tempo todo e títulos se repetem entre módulos ("Resumo", "Quiz")."""
+de uma SPA é redesenhado o tempo todo e títulos se repetem entre módulos ("Resumo", "Quiz").
+
+O grupo de cada item vem do DOM (o painel do módulo que contém a lição) e, quando o menu não marca nada, do próprio
+clique: um tópico que, ao ser aberto, revela subitens passa a ser grupo (pasta)."""
 
 from __future__ import annotations
 
@@ -36,6 +39,8 @@ class NavItem:
     is_group: bool = False
     group: str | None = None
     path: Path = ()
+    # posição de cada nível entre os irmãos no menu (1, 3, 2 = 1º módulo › 3ª unidade › 2º tópico): nomeia as pastas
+    position: tuple[int, ...] = ()
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -49,6 +54,7 @@ class _Entry:
     href: str | None
     is_group: bool
     path: Path
+    in_page: bool = False  # âncora para uma seção da página aberta (sumário da lição), não um tópico
 
 
 @dataclass
@@ -61,27 +67,38 @@ class _Snapshot:
         return next((e for e in self.entries if e.path == path), None)
 
     def children(self, path: Path) -> list[_Entry]:
-        return [e for e in self.entries if e.path[:-1] == path]
+        return [e for e in self.entries if e.path[:-1] == path and not (path and e.in_page)]
 
 
-def _with_paths(raw: list[dict]) -> list[_Entry]:
-    """Caminho de cada item pela profundidade e pela ordem no DOM: o grupo aberto mais próximo acima é o pai."""
-    stack: list[_Entry] = []
+def _with_paths(raw: list[dict], known_groups: set[Path]) -> list[_Entry]:
+    """Caminho de cada item pela cadeia de pais que o JS apontou (Módulo › Unidade › Lição). É grupo quem o menu marca,
+    quem tem filhos visíveis ou quem já se revelou grupo ao ser clicado (`known_groups`)."""
+
+    def path_of(index: int) -> Path:
+        chain: list[str] = []
+        seen: set[int] = set()
+        current: int | None = index
+        while current is not None and current not in seen and 0 <= current < len(raw):
+            seen.add(current)
+            chain.append(raw[current]["title"])
+            current = raw[current].get("parent")
+        return tuple(reversed(chain))
+
+    parents = {item.get("parent") for item in raw}
     entries: list[_Entry] = []
-    for item in raw:
-        while stack and stack[-1].depth >= item["depth"]:
-            stack.pop()
-        entry = _Entry(
-            title=item["title"],
-            selector=item["selector"],
-            depth=item["depth"],
-            href=item.get("href"),
-            is_group=bool(item.get("group")),
-            path=(*(s.title for s in stack), item["title"]),
+    for index, item in enumerate(raw):
+        path = path_of(index)
+        entries.append(
+            _Entry(
+                title=item["title"],
+                selector=item["selector"],
+                depth=len(path) - 1,
+                href=item.get("href"),
+                is_group=bool(item.get("group")) or index in parents or path in known_groups,
+                path=path,
+                in_page=bool(item.get("inPage")),
+            )
         )
-        entries.append(entry)
-        if entry.is_group:
-            stack.append(entry)
     return entries
 
 
@@ -95,6 +112,8 @@ class MenuWalker:
         self.container: str | None = config.selectors.nav_container or None
         self.frame: Frame | None = None  # frame onde o menu mora (o conteúdo é procurado fora dele)
         self.visits = 0
+        # tópicos que revelaram subitens ao serem clicados: continuam grupos mesmo quando o menu os fecha de novo
+        self.known_groups: set[Path] = set()
 
     async def snapshot(self) -> _Snapshot | None:
         selectors = self.config.selectors
@@ -108,6 +127,7 @@ class MenuWalker:
                     "fixedContainer": self.container or "",
                     "candidates": selectors.nav_container_candidates,
                     "itemSelector": selectors.nav_item,
+                    "groupSelector": selectors.expanders,
                     "noiseTexts": list(selectors.noise_texts),
                 },
             )
@@ -118,7 +138,9 @@ class MenuWalker:
         frame, data = best
         self.container = data["container"]
         self.frame = frame
-        return _Snapshot(frame=frame, container=data["container"], entries=_with_paths(data["items"]))
+        return _Snapshot(
+            frame=frame, container=data["container"], entries=_with_paths(data["items"], self.known_groups)
+        )
 
     async def _first_snapshot(self) -> _Snapshot | None:
         """O menu do player pode aparecer alguns segundos depois da página: espera até o tempo de navegação."""
@@ -173,17 +195,41 @@ class MenuWalker:
         except PlaywrightError:
             return None
 
+    async def click(self, path: Path) -> bool:
+        """Clica no item sem extrair e espera o menu reagir (o `map` usa para achar subitens que só aparecem depois)."""
+        target = await self.locate(path)
+        if target is None:
+            return False
+        try:
+            await target.scroll_into_view_if_needed()
+            await polite_pause(self.config.timing.pre_click_delay_s)
+            await target.click()
+        except PlaywrightError as error:
+            log.warning("não clicou em %s: %s", " › ".join(path), error)
+            return False
+        if self.frame:
+            await self._settle(self.frame)
+        return True
+
+    async def _has_children(self, path: Path, *, open_group: bool) -> bool:
+        snap = await self.ensure_open(path) if open_group else await self.snapshot()
+        return bool(snap and snap.children(path))
+
     async def walk(
         self,
         on_leaf: Callable[[NavItem], Awaitable[None]],
         on_group: Callable[[NavItem], Awaitable[None]] | None = None,
+        on_promoted: Callable[[NavItem], Awaitable[None]] | None = None,
         max_visits: int = 2_000,
     ) -> None:
-        async def visit(path: Path) -> None:
+        """`on_promoted` é chamado quando um item tratado como tópico revela subitens ao ser clicado: ele vira grupo e
+        os subitens são visitados em seguida."""
+
+        async def visit(path: Path, position: tuple[int, ...]) -> None:
             snap = await self.ensure_open(path) if path else await self._first_snapshot()
             if snap is None:
                 raise RuntimeError("nenhum menu encontrado — ajuste selectors.nav_container no extractor.toml")
-            for child in snap.children(path):
+            for number, child in enumerate(snap.children(path), 1):
                 if self.visits >= max_visits:
                     log.warning("limite de %s itens atingido; parando", max_visits)
                     return
@@ -198,12 +244,22 @@ class MenuWalker:
                     is_group=child.is_group,
                     group=" › ".join(child.path[:-1]) or None,
                     path=child.path,
+                    position=(*position, number),
                 )
-                if child.is_group:
+                if child.is_group and await self._has_children(child.path, open_group=True):
                     if on_group:
                         await on_group(item)
-                    await visit(child.path)  # entra no grupo antes de seguir para o irmão seguinte
-                else:
-                    await on_leaf(item)
+                    await visit(child.path, item.position)  # entra no grupo antes de seguir para o irmão seguinte
+                    continue
+                item.is_group = False  # tópico (ou grupo que abriu vazio): extraído como arquivo
+                await on_leaf(item)
+                if await self._has_children(child.path, open_group=False):
+                    # o clique revelou subitens que o menu não anunciava (lista carregada sob demanda): vira pasta
+                    self.known_groups.add(child.path)
+                    item.is_group = True
+                    log.info("%s revelou subitens: tratado como grupo", " › ".join(child.path))
+                    if on_promoted:
+                        await on_promoted(item)
+                    await visit(child.path, item.position)
 
-        await visit(())
+        await visit((), ())

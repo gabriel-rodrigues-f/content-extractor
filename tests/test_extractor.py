@@ -10,6 +10,11 @@ from spa_content_extractor.config import Config, Timing
 from spa_content_extractor.extractor import discover, extract, slugify
 
 
+def md_files(report) -> list[str]:
+    raw = Path(report.output) / "raw"
+    return sorted(p.relative_to(raw).as_posix() for p in raw.rglob("*.md"))
+
+
 def fast_config(tmp_path: Path) -> Config:
     config = Config(timing=Timing(min_delay_s=0.05, max_delay_s=0.1, pre_click_delay_s=(0.0, 0.05)))
     config.output_dir = tmp_path / "output"
@@ -38,12 +43,12 @@ async def test_extrai_cada_licao_do_iframe_aninhado_sem_ruido(spa_url, tmp_path)
     report = await extract(fast_config(tmp_path), spa_url, headed=False)
     assert [i["status"] for i in report.items] == ["ok", "ok", "ok", "ok"]
     out = Path(report.output)
-    files = sorted(p.name for p in (out / "raw").glob("*.md"))
-    assert files == [
-        "002-licao-1-1-o-que-e-bpm.md",
-        "003-licao-1-2-notacao-bpmn.md",
-        "005-licao-1-3-gateways.md",
-        "007-licao-2-1-monte-carlo.md",
+    files = md_files(report)
+    assert files == [  # cada grupo do menu é uma pasta; cada lição, um arquivo dentro dela
+        "01-modulo-1-fundamentos/01-licao-1-1-o-que-e-bpm.md",
+        "01-modulo-1-fundamentos/02-licao-1-2-notacao-bpmn.md",
+        "01-modulo-1-fundamentos/03-unidade-1-b-avancado/01-licao-1-3-gateways.md",
+        "02-modulo-2-simulacao/01-licao-2-1-monte-carlo.md",
     ]
 
     bpm = (out / "raw" / files[0]).read_text(encoding="utf-8")
@@ -69,7 +74,7 @@ async def test_extrai_cada_licao_do_iframe_aninhado_sem_ruido(spa_url, tmp_path)
     assert "O que é BPM" not in monte  # não ficou o conteúdo da lição anterior
 
     manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
-    assert len(manifest["items"]) == 4
+    assert [i["file"] for i in manifest["items"]] == [f"raw/{f}" for f in files]
 
 
 async def test_filtra_por_regex(spa_url, tmp_path):
@@ -142,12 +147,12 @@ async def test_sanfona_extrai_todas_as_licoes_na_ordem_do_curso(spa_url, tmp_pat
     ]
     assert all(i["status"] == "ok" for i in report.items)
     raw = Path(report.output) / "raw"
-    first = (raw / "002-licao-1-1-visao-geral.md").read_text(encoding="utf-8")
+    first = (raw / "01-modulo-1-introducao" / "01-licao-1-1-visao-geral.md").read_text(encoding="utf-8")
     assert "# Visão geral" in first  # a primeira lição extraída é a 1.1, não a 3.2 que o player abriu
-    # "Resumo" repetido: cada um com o conteúdo do próprio módulo
-    assert "Processos são ativos" in (raw / "003-resumo.md").read_text(encoding="utf-8")
-    assert "Compare cenários" in (raw / "011-resumo.md").read_text(encoding="utf-8")
-    cenarios = (raw / "010-licao-3-2-cenarios.md").read_text(encoding="utf-8")
+    # "Resumo" repetido: cada um na pasta do próprio módulo, com o conteúdo dele
+    assert "Processos são ativos" in (raw / "01-modulo-1-introducao" / "02-resumo.md").read_text(encoding="utf-8")
+    assert "Compare cenários" in (raw / "03-modulo-3-simulacao" / "03-resumo.md").read_text(encoding="utf-8")
+    cenarios = (raw / "03-modulo-3-simulacao" / "02-licao-3-2-cenarios.md").read_text(encoding="utf-8")
     assert "mesma seed" in cenarios  # a lição que já estava aberta também é extraída
 
 
@@ -175,3 +180,85 @@ async def test_botao_que_nao_leva_a_lugar_nenhum_para_com_mensagem(spa_url, tmp_
     config.timing.transition_timeout_s = 3
     with pytest.raises(LookupError, match="a página não mudou"):
         await discover(config, spa_url.replace("index.html", "landing-dead.html"), headed=False)
+
+
+OUTLINE = [
+    "Módulo 1 — Descoberta",
+    "Módulo 1 — Descoberta › Tópico 1.1 — Entrevistas",
+    "Módulo 1 — Descoberta › Tópico 1.2 — Mapeamento",
+    "Módulo 2 — Desenho",
+    "Módulo 2 — Desenho › Tópico 2.1 — Notação",
+    "Módulo 2 — Desenho › Unidade 2.A — Padrões",
+    "Módulo 2 — Desenho › Unidade 2.A — Padrões › Tópico 2.A.1 — Gateways",
+    "Módulo 3 — Entrega",
+    "Módulo 3 — Entrega › Tópico 3.1 — Publicação",
+]
+
+
+async def test_sanfona_sem_lista_reconhece_os_modulos_como_pastas(spa_url, tmp_path):
+    """Sanfona de React sem <ul> (cabeçalho <h3><button> + painel irmão, que some quando fechado): o módulo é pasta, o
+    painel não vira item e as âncoras do sumário da lição aberta não viram tópicos."""
+    url = spa_url.replace("index.html", "outline.html")
+    items = await discover(fast_config(tmp_path), url, headed=False)
+    assert [" › ".join(i.path) for i in items] == OUTLINE
+    assert [i.is_group for i in items] == [True, False, False, True, False, True, False, True, False]
+
+
+async def test_sanfona_sem_lista_grava_uma_pasta_por_modulo(spa_url, tmp_path):
+    report = await extract(fast_config(tmp_path), spa_url.replace("index.html", "outline.html"), headed=False)
+    assert all(i["status"] == "ok" for i in report.items)
+    assert md_files(report) == [
+        "01-modulo-1-descoberta/01-topico-1-1-entrevistas.md",
+        "01-modulo-1-descoberta/02-topico-1-2-mapeamento.md",
+        "02-modulo-2-desenho/01-topico-2-1-notacao.md",
+        "02-modulo-2-desenho/02-unidade-2-a-padroes/01-topico-2-a-1-gateways.md",
+        "03-modulo-3-entrega/01-topico-3-1-publicacao.md",
+    ]
+    raw = Path(report.output) / "raw"
+    mapeamento = (raw / "01-modulo-1-descoberta" / "02-topico-1-2-mapeamento.md").read_text(encoding="utf-8")
+    assert "O AS-IS registra" in mapeamento and "O TO-BE propõe" in mapeamento
+
+
+async def test_modulo_que_revela_aulas_ao_ser_clicado_vira_pasta(spa_url, tmp_path):
+    """Nada no menu diz que o módulo é grupo: as aulas só aparecem depois do clique. O extrator percebe e grava as
+    aulas dentro da pasta do módulo — sem deixar um arquivo com o nome do módulo."""
+    url = spa_url.replace("index.html", "lazy.html")
+    items = await discover(fast_config(tmp_path), url, headed=False)
+    assert [(" › ".join(i.path), i.is_group) for i in items] == [
+        ("Módulo 1 — Base", True),
+        ("Módulo 1 — Base › Aula 1.1 — Conceitos", False),
+        ("Módulo 1 — Base › Aula 1.2 — Papéis", False),
+        ("Módulo 2 — Prática", True),
+        ("Módulo 2 — Prática › Aula 2.1 — Exercício", False),
+    ]
+
+    report = await extract(fast_config(tmp_path), url, headed=False)
+    assert [(i["path"], i["status"]) for i in report.items] == [
+        ("Módulo 1 — Base › Aula 1.1 — Conceitos", "ok"),
+        ("Módulo 1 — Base › Aula 1.2 — Papéis", "ok"),
+        ("Módulo 2 — Prática › Aula 2.1 — Exercício", "ok"),
+    ]
+    assert md_files(report) == [
+        "01-modulo-1-base/01-aula-1-1-conceitos.md",
+        "01-modulo-1-base/02-aula-1-2-papeis.md",
+        "02-modulo-2-pratica/01-aula-2-1-exercicio.md",
+    ]
+    aula = (Path(report.output) / "raw" / "01-modulo-1-base" / "02-aula-1-2-papeis.md").read_text(encoding="utf-8")
+    assert "Papéis e responsabilidades" in aula
+    manifest = json.loads((Path(report.output) / "manifest.json").read_text(encoding="utf-8"))
+    assert len(manifest["items"]) == 3
+
+
+async def test_include_groups_guarda_a_pagina_do_modulo_dentro_da_pasta(spa_url, tmp_path):
+    config = fast_config(tmp_path)
+    config.selectors.include_groups = True
+    report = await extract(config, spa_url.replace("index.html", "lazy.html"), headed=False)
+    assert md_files(report) == [
+        "01-modulo-1-base/00-modulo-1-base.md",
+        "01-modulo-1-base/01-aula-1-1-conceitos.md",
+        "01-modulo-1-base/02-aula-1-2-papeis.md",
+        "02-modulo-2-pratica/00-modulo-2-pratica.md",
+        "02-modulo-2-pratica/01-aula-2-1-exercicio.md",
+    ]
+    overview = (Path(report.output) / "raw" / "01-modulo-1-base" / "00-modulo-1-base.md").read_text(encoding="utf-8")
+    assert "Visão geral do Módulo 1" in overview

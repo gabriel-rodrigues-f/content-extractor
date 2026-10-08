@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>Player com aulas sob demanda</title>
+<style>
+  body { margin: 0; font-family: sans-serif; display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+  nav { border-right: 1px solid #ddd; padding: 8px; }
+</style></head>
+<body>
+<nav class="course-nav"><ul id="outline"></ul></nav>
+<main id="content"></main>
+<script>
+  // Menu sem nenhuma marca de grupo (sem aria-expanded, sem classe, sem sublista): o módulo é um link comum que mostra
+  // a visão geral dele e só então "busca" e desenha a lista de aulas embaixo.
+  const COURSE = [
+    { id: 'm1', title: 'Módulo 1 — Base', overview: 'Visão geral do Módulo 1.', lessons: [
+      ['l11', 'Aula 1.1 — Conceitos', 'Conceitos de processo.'],
+      ['l12', 'Aula 1.2 — Papéis', 'Papéis e responsabilidades.'],
+    ]},
+    { id: 'm2', title: 'Módulo 2 — Prática', overview: 'Visão geral do Módulo 2.', lessons: [
+      ['l21', 'Aula 2.1 — Exercício', 'Exercício guiado de modelagem.'],
+    ]},
+  ]
+  const outline = document.getElementById('outline')
+  const main = document.getElementById('content')
+  function show(title, text) {
+    main.innerHTML = ''
+    setTimeout(() => { main.innerHTML = '<h1>' + title + '</h1><p>' + text + '</p>' }, 200)
+  }
+  for (const m of COURSE) {
+    const li = document.createElement('li')
+    const a = document.createElement('a')
+    a.href = '#/' + m.id
+    a.textContent = m.title
+    a.addEventListener('click', (e) => {
+      e.preventDefault()
+      show(m.title, m.overview)
+      if (li.querySelector('ul')) return
+      setTimeout(() => {
+        const ul = document.createElement('ul')
+        for (const [id, title, text] of m.lessons) {
+          const la = document.createElement('a')
+          la.href = '#/' + m.id + '/' + id
+          la.textContent = title
+          la.addEventListener('click', (ev) => { ev.preventDefault(); show(title, text) })
+          const item = document.createElement('li')
+          item.append(la)
+          ul.append(item)
+        }
+        li.append(ul)
+      }, 300)
+    })
+    li.append(a)
+    outline.append(li)
+  }
+  show('Bem-vindo', 'Escolha um módulo para começar.')
+</script>
+</body></html>

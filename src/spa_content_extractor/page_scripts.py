@@ -34,46 +34,119 @@ const cssPath = (el) => {
 const norm = (t) => clean(t).normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
 """
 
-# Mapeia o menu: escolhe o container com mais itens clicáveis (ou o fixado na config) e lista os itens.
+# Mapeia o menu: escolhe o container com mais itens clicáveis (ou o fixado na config), lista os itens e aponta o
+# GRUPO de cada um (o pai: módulo, unidade) pelo DOM — o grupo cujo painel contém o item.
 DISCOVER_NAV = (
     r"""
-({ fixedContainer, candidates, itemSelector, noiseTexts }) => {
+({ fixedContainer, candidates, itemSelector, groupSelector, noiseTexts }) => {
 """
     + _COMMON
     + r"""
   const noise = new Set(noiseTexts)
+  const SUBLIST = 'ul, ol, [role=group]'
+  // clicáveis por natureza; o que casa só por [aria-expanded]/[data-state] pode ser um invólucro
+  const INTERACTIVE =
+    'a, button, summary, [role=treeitem], [role=menuitem], [role=tab], [role=link], [role=option], [role=button], ' +
+    '[tabindex], [onclick]'
   // texto do próprio item, sem o das sublistas (um <li> de módulo clicável contém as lições)
   const ownText = (el) => {
     const copy = el.cloneNode(true)
-    for (const sub of copy.querySelectorAll('ul, ol, [role=group]')) sub.remove()
+    for (const sub of copy.querySelectorAll(SUBLIST)) sub.remove()
     return clean(copy.innerText || copy.textContent)
   }
+  const inSublist = (root, el) => {
+    for (let p = el.parentElement; p && p !== root; p = p.parentElement) if (p.matches(SUBLIST)) return true
+    return false
+  }
+  // invólucro: contém itens (fora das próprias sublistas) e não é clicável — o painel ou o bloco inteiro de uma
+  // sanfona — ou é clicável mas contém vários itens. Não vira item; os de dentro, sim.
+  const isWrapper = (el) => {
+    const inner = Array.from(el.querySelectorAll(itemSelector)).filter((c) => visible(c) && !inSublist(el, c))
+    return inner.length > 0 && (!el.matches(INTERACTIVE) || inner.length > 1)
+  }
+  const holderOf = (container, el) => {
+    const h = el.closest('li, [role=treeitem], details')
+    return h && h !== container && container.contains(h) ? h : null
+  }
+  const matchesGroup = (el) => {
+    if (!groupSelector) return false
+    try {
+      return el.matches(groupSelector) || Array.from(el.querySelectorAll(groupSelector)).some((x) => !inSublist(el, x))
+    } catch (e) {
+      return false
+    }
+  }
+  // grupo = abre/fecha subitens: aria-expanded, data-state de abrir/fechar, <summary>, aria-haspopup, classe
+  // collapsed/expanded, `expanders` da config (no item ou num ícone dele) ou sublista, mesmo oculta, no mesmo <li>
+  const isGroup = (container, el) => {
+    const state = el.getAttribute('data-state')
+    const popup = el.getAttribute('aria-haspopup')
+    if (el.hasAttribute('aria-expanded') || el.tagName === 'SUMMARY') return true
+    if (state && /^(open|closed|expanded|collapsed)$/.test(state)) return true
+    if (popup && popup !== 'false') return true
+    if (/(^|\s)(is-)?(collapsed|expanded)(\s|$)/.test(el.getAttribute('class') || '') || matchesGroup(el)) return true
+    const holder = holderOf(container, el)
+    return !!holder && Array.from(holder.querySelectorAll(SUBLIST)).some((s) => !s.contains(el))
+  }
+  const signature = (el) => el.tagName + '.' + ((el.getAttribute('class') || '').trim().split(/\s+/)[0] || '')
+  // onde ficam os subitens de um grupo: o alvo de aria-controls, o <li>/treeitem/<details> do grupo ou, na sanfona sem
+  // lista, o irmão seguinte do cabeçalho (subindo pelos invólucros de um filho só, como <h3><button>) — desde que não
+  // seja o bloco do grupo seguinte (mesma tag e classe) nem outro item
+  const panelsOf = (container, el, itemEls) => {
+    const panels = []
+    for (const id of (el.getAttribute('aria-controls') || '').split(/\s+/)) {
+      const p = id ? document.getElementById(id) : null
+      if (p) panels.push(p)
+    }
+    const holder = holderOf(container, el)
+    if (holder) return [...panels, holder]
+    let head = el
+    while (head.parentElement && head.parentElement !== container && head.parentElement.children.length === 1)
+      head = head.parentElement
+    const next = head.nextElementSibling
+    if (next && !itemEls.has(next) && signature(next) !== signature(head)) panels.push(next)
+    return panels
+  }
+  // âncora para uma seção da própria página (sumário da lição), não um tópico
+  const inPage = (el) => {
+    const href = el.getAttribute('href') || ''
+    if (!/^#[^/!]/.test(href)) return false
+    try {
+      return !!document.getElementById(decodeURIComponent(href.slice(1)))
+    } catch (e) {
+      return false
+    }
+  }
   const itemsIn = (container) => {
-    const items = []
+    const kept = []
     for (const el of container.querySelectorAll(itemSelector)) {
-      if (!visible(el)) continue
+      if (!visible(el) || isWrapper(el)) continue
       const title = ownText(el)
       // rótulo dentro de outro item (ex.: <span>/<a> dentro do <li> clicável): fica só o de fora
       const outer = el.parentElement && el.parentElement.closest(itemSelector)
-      if (outer && container.contains(outer) && norm(ownText(outer)) === norm(title)) continue
+      if (outer && container.contains(outer) && !isWrapper(outer) && norm(ownText(outer)) === norm(title)) continue
       if (title.length < 2 || title.length > 140 || noise.has(norm(title))) continue
-      let depth = 0
-      for (let p = el.parentElement; p && p !== container; p = p.parentElement) if (p.matches('ul, ol, [role=group]')) depth++
-      const cls = el.getAttribute('class') || ''
-      items.push({
-        title,
-        selector: cssPath(el),
-        depth,
-        href: el.getAttribute('href') || null,
-        // grupo = abre/fecha subitens (aria-expanded, data-state, <summary>, classe collapsed/expanded)
-        group:
-          el.hasAttribute('aria-expanded') ||
-          el.hasAttribute('data-state') ||
-          el.tagName === 'SUMMARY' ||
-          /(^|\s)(is-)?(collapsed|expanded)(\s|$)/.test(cls),
-      })
+      kept.push({ el, title, group: isGroup(container, el) })
     }
-    return items
+    // pai = o grupo de painel mais interno que contém o item
+    const itemEls = new Set(kept.map((k) => k.el))
+    const groups = kept.filter((k) => k.group).map((k) => ({ k, panels: panelsOf(container, k.el, itemEls) }))
+    return kept.map((item) => {
+      let best = null
+      for (const { k, panels } of groups) {
+        if (k === item || item.el.contains(k.el)) continue
+        for (const p of panels)
+          if (p.contains(item.el) && (!best || (best.panel !== p && best.panel.contains(p)))) best = { k, panel: p }
+      }
+      return {
+        title: item.title,
+        selector: cssPath(item.el),
+        href: item.el.getAttribute('href') || null,
+        group: item.group,
+        parent: best ? kept.indexOf(best.k) : null,
+        inPage: inPage(item.el),
+      }
+    })
   }
   let containers = []
   if (fixedContainer) containers = Array.from(document.querySelectorAll(fixedContainer))

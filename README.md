@@ -11,8 +11,8 @@ base de conhecimento.
 | --- | --- | --- |
 | 1. Login | `uv run spa-extract login <url>` | Abre o navegador visível; **você** faz o login e pressiona Enter no terminal. A sessão fica em `.auth/<host>.json` (permissão 600, fora do git). O extrator nunca digita credenciais. |
 | 2. Mapa | `uv run spa-extract map <url> [--start-click "Resume learning"] [--headed --pause]` | Clica no(s) botão(ões) de entrada, acha o menu sozinho (em qualquer frame), abre os grupos nível por nível e lista os itens (`▸` = grupo). Use para conferir antes de extrair. |
-| 3. Extração | `uv run spa-extract extract <url> [--start-click TEXTO] [--headed] [--only REGEX] [--limit N] [--include-groups] [--pause]` | Para cada item: clica, espera o conteúdo **estabilizar** e salva `output/<host>/<data>/raw/NNN-titulo.md` com front matter (título, caminho "Módulo › Unidade", frame, data) e um `manifest.json`. |
-| 4. Formatação (opcional) | `uv run spa-extract format output/<host>/<data>` | Claude 4.6 Sonnet no SAP AI Core transforma cada `raw/*.md` em `knowledge/*.md` limpo (hierarquia, listas, termos em negrito, código, imagens comentadas). |
+| 3. Extração | `uv run spa-extract extract <url> [--start-click TEXTO] [--headed] [--only REGEX] [--limit N] [--include-groups] [--pause]` | Para cada tópico: clica, espera o conteúdo **estabilizar** e salva em `output/<host>/<data>/raw/`, **uma pasta por grupo do menu** (`01-modulo/02-unidade/01-topico.md`), com front matter (título, caminho "Módulo › Unidade", frame, data) e um `manifest.json`. |
+| 4. Formatação (opcional) | `uv run spa-extract format output/<host>/<data>` | Claude 4.6 Sonnet no SAP AI Core transforma cada `.md` de `raw/` no mesmo caminho em `knowledge/`, limpo (hierarquia, listas, termos em negrito, código, imagens comentadas). |
 
 ### Espera robusta ("renderizado, não só carregado")
 
@@ -41,10 +41,29 @@ mantêm a linguagem.
   tópico (e em cada unidade dentro dele, recursivamente), extrai, e só então passa ao segundo módulo — até o último.
   Não importa em que lição o player abriu (cache/"retomar de onde parou") nem se o menu é "sanfona" (abrir um módulo
   fecha os outros): antes de cada clique o caminho Módulo › Unidade é reaberto.
-- Cada item é identificado pelo caminho completo, então títulos repetidos ("Resumo", "Quiz") em módulos diferentes
-  viram arquivos diferentes, na ordem do curso (`NNN` = posição no menu).
-- Grupos são reconhecidos por `aria-expanded`, `data-state`, `<details>` ou classes `collapsed`/`expanded`; acrescente
-  a classe do alvo em `selectors.expanders` se precisar.
+- A saída repete o menu: **cada grupo (módulo, unidade) é uma pasta e cada tópico é um arquivo dentro dela**,
+  numerados pela posição no menu para manter a ordem do curso:
+
+  ```text
+  raw/
+    01-modulo-1-introducao/
+      01-licao-1-1-visao-geral.md
+      02-unidade-1-a-conceitos/
+        01-licao-1-a-1-eventos.md
+      03-resumo.md
+    02-modulo-2-modelagem/
+      01-licao-2-1-gateways.md
+  ```
+
+  Títulos repetidos ("Resumo", "Quiz") em módulos diferentes ficam cada um na pasta do seu módulo. Com
+  `--include-groups`, a página do próprio módulo vira `00-<modulo>.md` dentro da pasta dele.
+- Um item é grupo (pasta) quando o menu o marca (`aria-expanded`, `data-state` de abrir/fechar, `<details>`, classes
+  `collapsed`/`expanded`), quando tem uma sublista no mesmo `<li>` (mesmo oculta), quando é o cabeçalho de uma sanfona
+  sem lista (`<h3><button>` + painel) ou quando, ao ser clicado, **revela subitens** — nesse caso o arquivo dele sai do
+  resultado e os subitens vão para a pasta. O `map` também clica em cada tópico para mostrar essa estrutura. Se um
+  módulo ainda virar arquivo, acrescente a classe do cabeçalho (ou do ícone dele) em `selectors.expanders`.
+- Âncoras para seções da própria lição (o sumário que alguns players mostram embaixo da lição aberta) não viram
+  tópicos.
 
 ### robots.txt
 

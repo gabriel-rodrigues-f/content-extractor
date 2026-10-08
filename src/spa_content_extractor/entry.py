@@ -17,6 +17,7 @@ from .config import Config
 
 log = logging.getLogger(__name__)
 
+
 async def _find_clickable(page: Page, text: str) -> Locator | None:
     """Procura em todos os frames: botão, depois link, depois qualquer elemento visível com o texto (sem diferenciar
     maiúsculas)."""

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>Player com sanfona sem lista</title>
+<style>
+  body { margin: 0; font-family: sans-serif; display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
+  aside { border-right: 1px solid #ddd; padding: 8px; }
+  .acc-panel a { display: block; padding: 4px 12px; }
+  .toc a { display: block; padding: 2px 24px; font-size: 13px; }
+</style></head>
+<body>
+<aside class="course-outline" aria-label="Conteúdo do curso"></aside>
+<main id="content"><p>Carregando…</p></main>
+<script>
+  // Como num Radix Accordion (React): <div data-state><h3><button aria-expanded data-state/></h3><div painel/></div>,
+  // sem <ul>. O painel fechado nem existe no DOM, só um módulo fica aberto por vez e o menu é redesenhado a cada
+  // clique. A lição aberta mostra, embaixo dela, um sumário com âncoras para as seções da própria página.
+  const COURSE = [
+    { title: 'Módulo 1 — Descoberta', items: [
+      { id: 't11', title: 'Tópico 1.1 — Entrevistas' },
+      { id: 't12', title: 'Tópico 1.2 — Mapeamento' },
+    ]},
+    { title: 'Módulo 2 — Desenho', items: [
+      { id: 't21', title: 'Tópico 2.1 — Notação' },
+      { title: 'Unidade 2.A — Padrões', items: [{ id: 't2a1', title: 'Tópico 2.A.1 — Gateways' }] },
+    ]},
+    { title: 'Módulo 3 — Entrega', items: [{ id: 't31', title: 'Tópico 3.1 — Publicação' }] },
+  ]
+  const TEXT = {
+    t11: ['Entrevistas', '<p>Entrevistas revelam o processo real.</p>'],
+    t12: ['Mapeamento', '<h2 id="sec-as-is">AS-IS</h2><p>O AS-IS registra o processo atual.</p>' +
+      '<h2 id="sec-to-be">TO-BE</h2><p>O TO-BE propõe o redesenho.</p>'],
+    t21: ['Notação', '<p>BPMN 2.0 padroniza a notação.</p>'],
+    t2a1: ['Gateways', '<p>Gateways controlam a divergência do fluxo.</p>'],
+    t31: ['Publicação', '<p>Publique a versão aprovada.</p>'],
+  }
+  const open = new Set(['Módulo 1 — Descoberta'])
+  let current = 't12'  // "cache": o player retoma no último tópico, com o sumário dele aberto
+  const nav = document.querySelector('.course-outline')
+  const main = document.getElementById('content')
+
+  function group(g, heading, itemCls, triggerCls) {
+    const isOpen = open.has(g.title)
+    const wrap = document.createElement('div')
+    wrap.className = itemCls
+    wrap.dataset.state = isOpen ? 'open' : 'closed'
+    const h = document.createElement(heading)
+    const b = document.createElement('button')
+    b.className = triggerCls
+    b.textContent = g.title
+    b.setAttribute('aria-expanded', String(isOpen))
+    b.dataset.state = isOpen ? 'open' : 'closed'
+    b.addEventListener('click', () => toggle(g))
+    h.append(b)
+    wrap.append(h)
+    if (!isOpen) return wrap
+    const panel = document.createElement('div')
+    panel.className = 'acc-panel'
+    panel.dataset.state = 'open'
+    panel.setAttribute('role', 'region')
+    for (const it of g.items) {
+      if (it.items) { panel.append(group(it, 'h4', 'sub-item', 'sub-trigger')); continue }
+      const a = document.createElement('a')
+      a.href = '#/' + it.id
+      a.textContent = it.title
+      a.addEventListener('click', (e) => { e.preventDefault(); current = it.id; show(); render() })
+      panel.append(a)
+      if (it.id === current && it.id === 't12') {
+        const toc = document.createElement('div')
+        toc.className = 'toc'
+        toc.innerHTML = '<a href="#sec-as-is">AS-IS</a><a href="#sec-to-be">TO-BE</a>'
+        panel.append(toc)
+      }
+    }
+    wrap.append(panel)
+    return wrap
+  }
+  function render() {
+    nav.innerHTML = ''
+    nav.append(...COURSE.map((g) => group(g, 'h3', 'acc-item', 'acc-trigger')))
+  }
+  function toggle(g) {
+    if (open.has(g.title)) open.delete(g.title)
+    else {
+      if (COURSE.includes(g)) for (const o of COURSE) open.delete(o.title)  // sanfona: um módulo por vez
+      open.add(g.title)
+    }
+    render()
+  }
+  function show() {
+    const [title, html] = TEXT[current]
+    main.innerHTML = ''
+    setTimeout(() => { main.innerHTML = '<h1>' + title + '</h1>' + html }, 300)
+  }
+  show()
+  render()
+</script>
+</body></html>

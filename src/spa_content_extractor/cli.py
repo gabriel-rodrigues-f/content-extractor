@@ -43,7 +43,7 @@ def _parser() -> argparse.ArgumentParser:
     map_.add_argument("--headed", action="store_true", help="mostra o navegador")
     _common(map_)
 
-    ext = sub.add_parser("extract", help="extrai cada item do menu para um .md")
+    ext = sub.add_parser("extract", help="extrai cada tópico do menu para um .md, numa pasta por grupo")
     ext.add_argument("url")
     ext.add_argument("--headed", action="store_true", help="mostra o navegador")
     ext.add_argument("--only", help="regex no título dos itens a extrair")
@@ -52,7 +52,7 @@ def _parser() -> argparse.ArgumentParser:
 
     fmt = sub.add_parser("format", help="formata os .md brutos de uma execução com Claude no SAP AI Core")
     fmt.add_argument("run", type=Path, help="pasta da execução (output/<host>/<data>)")
-    fmt.add_argument("--only", help="regex no nome dos arquivos")
+    fmt.add_argument("--only", help="regex no caminho dos arquivos (pasta/arquivo)")
     return parser
 
 
