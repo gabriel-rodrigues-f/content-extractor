@@ -156,6 +156,7 @@ DISCOVER_NAV = (
           if (p.contains(item.el) && (!best || (best.panel !== p && best.panel.contains(p)))) best = { k, panel: p }
       }
       return {
+        _el: item.el,
         title: item.title,
         selector: cssPath(item.el),
         href: item.el.getAttribute('href') || null,
@@ -169,6 +170,7 @@ DISCOVER_NAV = (
   if (fixedContainer) containers = Array.from(document.querySelectorAll(fixedContainer))
   else for (const sel of candidates) for (const el of document.querySelectorAll(sel)) containers.push(el)
   let best = null
+  const scored = []
   for (const c of containers) {
     if (!visible(c)) continue
     // links do rodapé costumam ser desenhados antes do menu do curso: nunca são o menu (a não ser fixados na config)
@@ -180,10 +182,28 @@ DISCOVER_NAV = (
     const textLen = textOf(c).length
     const linkDensity = items.reduce((s, i) => s + i.title.length, 0) / Math.max(textLen, 1)
     const score = items.length * Math.min(1, linkDensity * 1.5) * (avg <= 80 ? 1 : 0.5)
-    if (!best || score > best.score) best = { score, container: c, items }
+    scored.push({ score, container: c, items })
+    if (!best || score > best.score) best = scored[scored.length - 1]
   }
   if (!best) return null
-  return { container: cssPath(best.container), score: best.score, items: best.items }
+  // a coluna do menu às vezes tem, além da árvore do curso, um banner com botão ("Assine…"): se um container interno
+  // tem todos os itens e só ficam de fora botões soltos (sem link, sem subitens), o menu é o interno
+  const cta = (i) => !i.group && !i.href && i._el.tagName === 'BUTTON'
+  let menu = best
+  for (let changed = true; changed; ) {
+    changed = false
+    for (const s of scored) {
+      if (s === menu || !menu.container.contains(s.container)) continue
+      const left = menu.items.filter((i) => !s.container.contains(i._el))
+      if (left.length > 0 && left.length <= 2 && left.every(cta)) {
+        menu = s
+        changed = true
+        break
+      }
+    }
+  }
+  const items = menu.items.map(({ _el, ...item }) => item)
+  return { container: cssPath(menu.container), score: best.score, items }
 }
 """
 )

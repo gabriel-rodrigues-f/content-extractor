@@ -85,6 +85,9 @@ async def test_filtra_por_regex(spa_url, tmp_path):
 
 def test_slug():
     assert slugify("Lição 1.2 — Notação BPMN") == "licao-1-2-notacao-bpmn"
+    # nome longo: corta na última palavra inteira, não no meio ("architectu")
+    title = "Mastering Advanced SAP LeanIX Knowledge for Enterprise Architecture Success"
+    assert slugify(title, 60) == "mastering-advanced-sap-leanix-knowledge-for-enterprise"
 
 
 async def test_resume_learning_na_mesma_aba(spa_url, tmp_path):

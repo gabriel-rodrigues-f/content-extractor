@@ -12,7 +12,7 @@
 <body>
 <main>
   <div class="CourseLayout_layout__q1Rt">
-    <div class="CourseLayout_navigation__a8Kd course-nav-slot"></div>
+    <div class="CourseLayout_navigation__a8Kd course-nav-slot" role="navigation"></div>
     <div class="CourseLayout_content__kn2Q"><div id="lesson" class="LessonPage_lessonPage__ttTU"><p>Carregando…</p></div></div>
     <div class="Promo_banner__Zx9P">Assine o plano com IA.</div>
   </div>
@@ -89,7 +89,11 @@
       details.append(summary, ul)
       tree.append(details)
     }
-    document.querySelector('.course-nav-slot').append(tree)
+    // na mesma coluna do menu, depois da árvore: um banner de assinatura com botão (não é lição)
+    const banner = document.createElement('div')
+    banner.className = 'InlineBanner_container__LV'
+    banner.innerHTML = '<p>Aprenda com IA</p><button><span>Assinar o plano</span></button>'
+    document.querySelector('.course-nav-slot').append(tree, banner)
   }
   show()
   setTimeout(renderNav, 1500)

@@ -28,9 +28,14 @@ log = logging.getLogger(__name__)
 
 
 def slugify(text: str, limit: int = 70) -> str:
+    """Nome de arquivo/pasta: sem acentos, minúsculo, hífens; nomes longos são cortados na última palavra inteira."""
     text = unicodedata.normalize("NFD", text)
     text = "".join(c for c in text if not unicodedata.combining(c)).lower()
-    return (re.sub(r"[^a-z0-9]+", "-", text).strip("-")[:limit].rstrip("-")) or "sem-titulo"
+    slug = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+    if len(slug) > limit:
+        cut = slug[: limit + 1]  # um caractere a mais: se for "-", a palavra do limite está inteira
+        slug = cut.rsplit("-", 1)[0] if "-" in cut[limit // 2 :] else slug[:limit]
+    return slug.rstrip("-") or "sem-titulo"
 
 
 def item_file(item: NavItem) -> PurePosixPath:
