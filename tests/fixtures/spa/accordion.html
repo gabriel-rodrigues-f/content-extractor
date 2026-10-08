@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>Player sanfona</title>
+<style>
+  body { margin: 0; font-family: sans-serif; display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+  nav { border-right: 1px solid #ddd; padding: 8px; }
+  [hidden] { display: none !important; }
+  .busy { opacity: .3; }
+</style></head>
+<body>
+<nav class="course-outline" aria-label="Conteúdo do curso">
+  <ul>
+    <li><button class="module" aria-expanded="false">Módulo 1 — Introdução</button>
+      <ul hidden>
+        <li><a href="#" data-lesson="m1-l1">Lição 1.1 — Visão geral</a></li>
+        <li><a href="#" data-lesson="m1-resumo">Resumo</a></li>
+      </ul></li>
+    <li><button class="module" aria-expanded="false">Módulo 2 — Modelagem</button>
+      <ul hidden>
+        <li><a href="#" data-lesson="m2-l1">Lição 2.1 — Eventos</a></li>
+        <li><span class="unit" data-state="closed" tabindex="0">Unidade 2.A — Gateways</span>
+          <ul hidden>
+            <li><a href="#" data-lesson="m2-a1">Lição 2.A.1 — Exclusivo</a></li>
+          </ul></li>
+      </ul></li>
+    <li><button class="module" aria-expanded="false">Módulo 3 — Simulação</button>
+      <ul hidden>
+        <li><a href="#" data-lesson="m3-l1">Lição 3.1 — Réplicas</a></li>
+        <li><a href="#" data-lesson="m3-l2">Lição 3.2 — Cenários</a></li>
+        <li><a href="#" data-lesson="m3-resumo">Resumo</a></li>
+      </ul></li>
+  </ul>
+</nav>
+<main id="content"><p>Carregando…</p></main>
+<script>
+  const LESSONS = {
+    'm1-l1': ['Visão geral', 'Este curso apresenta a gestão de processos.'],
+    'm1-resumo': ['Resumo do Módulo 1', 'Processos são ativos da organização.'],
+    'm2-l1': ['Eventos', 'Eventos de início e fim delimitam o processo.'],
+    'm2-a1': ['Gateway exclusivo', 'O gateway exclusivo escolhe um único caminho.'],
+    'm3-l1': ['Réplicas', 'Réplicas reduzem a variância das médias.'],
+    'm3-l2': ['Cenários', 'Cenários comparam alternativas com a mesma seed.'],
+    'm3-resumo': ['Resumo do Módulo 3', 'Compare cenários antes de decidir.'],
+  }
+  const main = document.getElementById('content')
+  function show(id) {
+    main.classList.add('busy')
+    setTimeout(() => {
+      const [title, text] = LESSONS[id]
+      main.innerHTML = '<h1>' + title + '</h1>'
+      setTimeout(() => { main.insertAdjacentHTML('beforeend', '<p>' + text + '</p>'); main.classList.remove('busy') }, 250)
+    }, 300)
+  }
+  // sanfona: abrir um módulo fecha os outros
+  const modules = Array.from(document.querySelectorAll('.module'))
+  for (const b of modules) {
+    b.addEventListener('click', () => {
+      const willOpen = b.getAttribute('aria-expanded') !== 'true'
+      for (const other of modules) { other.setAttribute('aria-expanded', 'false'); other.nextElementSibling.hidden = true }
+      b.setAttribute('aria-expanded', String(willOpen))
+      b.nextElementSibling.hidden = !willOpen
+    })
+  }
+  for (const u of document.querySelectorAll('.unit')) {
+    u.addEventListener('click', () => {
+      const open = u.dataset.state === 'open'
+      u.dataset.state = open ? 'closed' : 'open'
+      u.nextElementSibling.hidden = open
+    })
+  }
+  for (const a of document.querySelectorAll('[data-lesson]')) {
+    a.addEventListener('click', (e) => { e.preventDefault(); show(a.dataset.lesson) })
+  }
+  // "cache": o player retoma na última lição acessada (Módulo 3, Lição 3.2)
+  modules[2].click()
+  show('m3-l2')
+</script>
+</body></html>

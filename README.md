@@ -27,13 +27,18 @@ Remove navegação, cabeçalho, rodapé, botões, barras de ferramentas, diálog
 ("Próximo", "Anterior", "Marcar como concluído"…). Imagens viram `<!-- Imagem presente aqui: … -->`; blocos de código
 mantêm a linguagem.
 
-### Ação de entrada e menus recursivos
+### Ação de entrada e ordem de navegação
 
 - `--start-click "Resume learning"` (ou `start_click` no `extractor.toml`) clica no botão pelo texto logo ao abrir; se o
   clique abrir outra aba, a extração segue nela. Repita a opção para vários cliques em sequência.
-- O menu é aberto em rodadas — módulo, unidade, lição — até não aparecer item novo. Grupos são reconhecidos por
-  `aria-expanded`, `data-state`, `<details>` ou classes `collapsed`/`expanded`; acrescente a classe do alvo em
-  `selectors.expanders` se precisar.
+- O menu é percorrido **em profundidade, sempre a partir do primeiro item**: abre o primeiro módulo, entra em cada
+  tópico (e em cada unidade dentro dele, recursivamente), extrai, e só então passa ao segundo módulo — até o último.
+  Não importa em que lição o player abriu (cache/"retomar de onde parou") nem se o menu é "sanfona" (abrir um módulo
+  fecha os outros): antes de cada clique o caminho Módulo › Unidade é reaberto.
+- Cada item é identificado pelo caminho completo, então títulos repetidos ("Resumo", "Quiz") em módulos diferentes
+  viram arquivos diferentes, na ordem do curso (`NNN` = posição no menu).
+- Grupos são reconhecidos por `aria-expanded`, `data-state`, `<details>` ou classes `collapsed`/`expanded`; acrescente
+  a classe do alvo em `selectors.expanders` se precisar.
 
 ### robots.txt
 

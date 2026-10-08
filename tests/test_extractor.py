@@ -105,3 +105,45 @@ async def test_botao_de_entrada_inexistente_explica(spa_url, tmp_path):
         assert "Botão que não existe" in str(error)
     else:
         raise AssertionError("deveria avisar que o botão não existe")
+
+
+async def test_sanfona_percorre_em_profundidade_desde_o_primeiro_modulo(spa_url, tmp_path):
+    """O player abre na Lição 3.2 (cache) e o menu é sanfona: mesmo assim a ordem é a do curso, do Módulo 1 em diante."""
+    url = spa_url.replace("index.html", "accordion.html")
+    items = await discover(fast_config(tmp_path), url, headed=False)
+    assert [" › ".join(i.path) for i in items] == [
+        "Módulo 1 — Introdução",
+        "Módulo 1 — Introdução › Lição 1.1 — Visão geral",
+        "Módulo 1 — Introdução › Resumo",
+        "Módulo 2 — Modelagem",
+        "Módulo 2 — Modelagem › Lição 2.1 — Eventos",
+        "Módulo 2 — Modelagem › Unidade 2.A — Gateways",
+        "Módulo 2 — Modelagem › Unidade 2.A — Gateways › Lição 2.A.1 — Exclusivo",
+        "Módulo 3 — Simulação",
+        "Módulo 3 — Simulação › Lição 3.1 — Réplicas",
+        "Módulo 3 — Simulação › Lição 3.2 — Cenários",
+        "Módulo 3 — Simulação › Resumo",
+    ]
+
+
+async def test_sanfona_extrai_todas_as_licoes_na_ordem_do_curso(spa_url, tmp_path):
+    url = spa_url.replace("index.html", "accordion.html")
+    report = await extract(fast_config(tmp_path), url, headed=False)
+    assert [i["path"] for i in report.items] == [
+        "Módulo 1 — Introdução › Lição 1.1 — Visão geral",
+        "Módulo 1 — Introdução › Resumo",
+        "Módulo 2 — Modelagem › Lição 2.1 — Eventos",
+        "Módulo 2 — Modelagem › Unidade 2.A — Gateways › Lição 2.A.1 — Exclusivo",
+        "Módulo 3 — Simulação › Lição 3.1 — Réplicas",
+        "Módulo 3 — Simulação › Lição 3.2 — Cenários",
+        "Módulo 3 — Simulação › Resumo",
+    ]
+    assert all(i["status"] == "ok" for i in report.items)
+    raw = Path(report.output) / "raw"
+    first = (raw / "002-licao-1-1-visao-geral.md").read_text(encoding="utf-8")
+    assert "# Visão geral" in first  # a primeira lição extraída é a 1.1, não a 3.2 que o player abriu
+    # "Resumo" repetido: cada um com o conteúdo do próprio módulo
+    assert "Processos são ativos" in (raw / "003-resumo.md").read_text(encoding="utf-8")
+    assert "Compare cenários" in (raw / "011-resumo.md").read_text(encoding="utf-8")
+    cenarios = (raw / "010-licao-3-2-cenarios.md").read_text(encoding="utf-8")
+    assert "mesma seed" in cenarios  # a lição que já estava aberta também é extraída

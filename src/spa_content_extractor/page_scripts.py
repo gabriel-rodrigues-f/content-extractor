@@ -42,18 +42,21 @@ DISCOVER_NAV = (
     + _COMMON
     + r"""
   const noise = new Set(noiseTexts)
+  // texto do próprio item, sem o das sublistas (um <li> de módulo clicável contém as lições)
+  const ownText = (el) => {
+    const copy = el.cloneNode(true)
+    for (const sub of copy.querySelectorAll('ul, ol, [role=group]')) sub.remove()
+    return clean(copy.innerText || copy.textContent)
+  }
   const itemsIn = (container) => {
-    const seen = new Set()
     const items = []
     for (const el of container.querySelectorAll(itemSelector)) {
       if (!visible(el)) continue
-      // item dentro de outro item (ex.: <span> dentro de <a>): fica o de fora
-      if (el.parentElement && el.parentElement.closest(itemSelector) && container.contains(el.parentElement.closest(itemSelector))) continue
-      const title = textOf(el)
+      const title = ownText(el)
+      // rótulo dentro de outro item (ex.: <span>/<a> dentro do <li> clicável): fica só o de fora
+      const outer = el.parentElement && el.parentElement.closest(itemSelector)
+      if (outer && container.contains(outer) && norm(ownText(outer)) === norm(title)) continue
       if (title.length < 2 || title.length > 140 || noise.has(norm(title))) continue
-      const key = norm(title)
-      if (seen.has(key)) continue
-      seen.add(key)
       let depth = 0
       for (let p = el.parentElement; p && p !== container; p = p.parentElement) if (p.matches('ul, ol, [role=group]')) depth++
       const cls = el.getAttribute('class') || ''
@@ -208,3 +211,22 @@ IS_LOADING = (
 }
 """
 )
+
+# Estado de um grupo do menu: 'open' | 'closed' | 'unknown' | 'missing'.
+GROUP_STATE = r"""
+(selector) => {
+  const el = document.querySelector(selector)
+  if (!el) return 'missing'
+  const aria = el.getAttribute('aria-expanded')
+  if (aria === 'true') return 'open'
+  if (aria === 'false') return 'closed'
+  const state = el.getAttribute('data-state')
+  if (state === 'open' || state === 'expanded') return 'open'
+  if (state === 'closed' || state === 'collapsed') return 'closed'
+  if (el.tagName === 'SUMMARY') return el.parentElement && el.parentElement.open ? 'open' : 'closed'
+  const cls = el.getAttribute('class') || ''
+  if (/(^|\s)(is-)?collapsed(\s|$)/.test(cls)) return 'closed'
+  if (/(^|\s)(is-)?expanded(\s|$)/.test(cls)) return 'open'
+  return 'unknown'
+}
+"""

@@ -19,6 +19,8 @@ from .config import Config
 
 log = logging.getLogger(__name__)
 
+SAME_CONTENT_QUIET_MS = 3_000
+
 
 def session_file(config: Config, url: str) -> Path:
     """Sessão (cookies + storage) por host, gravada pelo `spa-extract login`. Contém credenciais de sessão: fica
@@ -84,6 +86,7 @@ async def wait_until_stable(page: Page, config: Config, previous_hash: str | Non
     except PlaywrightError:
         pass
     last_hash = None
+    same_checked = False
     while True:
         remaining_ms = max(200, int((deadline - asyncio.get_running_loop().time()) * 1000))
         loading = await asyncio.gather(
@@ -102,6 +105,21 @@ async def wait_until_stable(page: Page, config: Config, previous_hash: str | Non
             current = hashlib.sha1(text.encode("utf-8")).hexdigest() if text else None
             if current and current != previous_hash and current == last_hash:
                 return current
+            if current and current == previous_hash and not same_checked:
+                # o item clicado pode ser o que já estava na tela (o player abriu nele): se nenhum frame muda por
+                # SAME_CONTENT_QUIET_MS depois do clique, o conteúdo é esse mesmo — sem esperar o tempo-limite inteiro
+                same_checked = True
+                waits = await asyncio.gather(
+                    *(
+                        safe_eval(f, page_scripts.WAIT_QUIET, {"quietMs": SAME_CONTENT_QUIET_MS, "timeoutMs": 8_000})
+                        for f in all_frames(page)
+                    )
+                )
+                if all(w <= SAME_CONTENT_QUIET_MS + 400 for w in waits if isinstance(w, (int, float))):
+                    again = await content_text()
+                    if again and hashlib.sha1(again.encode("utf-8")).hexdigest() == current:
+                        log.info("o conteúdo já era o deste item (o player tinha aberto nele)")
+                        return current
             last_hash = current
         if asyncio.get_running_loop().time() >= deadline:
             if last_hash:

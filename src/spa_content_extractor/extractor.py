@@ -1,4 +1,5 @@
-"""Fluxo de extração: abrir → mapear o menu → para cada item, clicar, esperar estabilizar, extrair e salvar."""
+"""Fluxo de extração: abrir → ação de entrada → percorrer o menu em profundidade (sempre do primeiro item) e, em cada
+tópico, clicar, esperar estabilizar, extrair e salvar."""
 
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ from .browser import open_browser, polite_pause, wait_until_stable
 from .config import Config
 from .content import ContentLocation, content_text, locate_content, serialize, strip_noise, to_markdown
 from .entry import run_start_actions
-from .navigation import NavItem, NavMap, locate_item, map_navigation, reopen_groups
+from .navigation import MenuWalker, NavItem
 from .robots import ensure_allowed
 
 log = logging.getLogger(__name__)
@@ -66,14 +67,22 @@ async def _pause(headed: bool, pause: bool) -> None:
 
 
 async def discover(config: Config, url: str, *, headed: bool, pause: bool = False) -> list[NavItem]:
-    """`spa-extract map`: só o mapa, para revisar antes de extrair (e ajustar seletores se precisar)."""
+    """`spa-extract map`: percorre o menu como a extração faria (abrindo cada grupo), sem extrair conteúdo."""
     ensure_allowed(url, config)
     async with open_browser(config, url, headed=headed) as (context, page):
         await _open(page, url)
         page = await run_start_actions(context, page, config, config.start_click)
-        nav = await map_navigation(page, config)
+        items: list[NavItem] = []
+
+        async def record(item: NavItem) -> None:
+            items.append(item)
+
+        try:
+            await MenuWalker(page, config).walk(on_leaf=record, on_group=record)
+        except RuntimeError:
+            return []
         await _pause(headed, pause)
-        return nav.items if nav else []
+        return items
 
 
 def _front_matter(item: NavItem, url: str, location: ContentLocation | None) -> str:
@@ -93,15 +102,15 @@ def _front_matter(item: NavItem, url: str, location: ContentLocation | None) -> 
 
 
 async def _extract_item(
-    page: Page, config: Config, nav: NavMap, item: NavItem, previous_hash: str | None
+    page: Page, config: Config, walker: MenuWalker, item: NavItem, previous_hash: str | None
 ) -> tuple[str, str, ContentLocation | None]:
-    await reopen_groups(nav, config)
-    target = await locate_item(page, nav, item)
+    target = await walker.locate(item.path)  # reabre o caminho (Módulo › Unidade) se o menu se fechou
     if target is None:
         raise LookupError("item sumiu do menu")
     await target.scroll_into_view_if_needed()
-    # o que está na tela antes do clique: o conteúdo novo precisa ser diferente disso (lição anterior ou placeholder)
-    before = await content_text(await locate_content(page, config, nav.container, nav.frame))
+    # o que está na tela antes do clique: o conteúdo novo precisa ser diferente disso (lição anterior ou a que o
+    # player abriu sozinho, de cache)
+    before = await content_text(await locate_content(page, config, walker.container, walker.frame))
     baseline = hashlib.sha1(before.encode("utf-8")).hexdigest() if before else previous_hash
     await polite_pause(config.timing.pre_click_delay_s)
     await target.click()
@@ -110,7 +119,7 @@ async def _extract_item(
 
     async def current_text() -> str:
         nonlocal location
-        location = await locate_content(page, config, nav.container, nav.frame)
+        location = await locate_content(page, config, walker.container, walker.frame)
         return await content_text(location)
 
     stable_hash = await wait_until_stable(page, config, baseline, current_text)
@@ -120,6 +129,10 @@ async def _extract_item(
     if not markdown.strip():
         raise ValueError("conteúdo vazio depois da limpeza")
     return markdown, stable_hash, location
+
+
+class _LimitReached(Exception):
+    pass
 
 
 async def extract(
@@ -138,40 +151,43 @@ async def extract(
     async with open_browser(config, url, headed=headed) as (context, page):
         await _open(page, url)
         page = await run_start_actions(context, page, config, config.start_click)
-        nav = await map_navigation(page, config)
-        if nav is None:
-            raise RuntimeError("nenhum menu encontrado — ajuste selectors.nav_container no extractor.toml")
-        items = [
-            i
-            for i in nav.items
-            if (config.selectors.include_groups or not i.is_group)
-            and (not only or re.search(only, f"{i.group or ''} {i.title}", re.IGNORECASE))
-        ]
-        if limit:
-            items = items[:limit]
-        log.info("menu %s com %s item(ns); extraindo %s", nav.container, len(nav.items), len(items))
-        previous_hash: str | None = None
-        for item in items:
-            entry = {"index": item.index, "title": item.title, "status": "pending"}
+        walker = MenuWalker(page, config)
+        state: dict[str, object] = {"previous_hash": None}
+
+        async def handle(item: NavItem) -> None:
+            path_text = " › ".join(item.path)
+            if only and not re.search(only, path_text, re.IGNORECASE):
+                return
+            if limit and len(report.items) >= limit:
+                raise _LimitReached
+            entry: dict = {"index": item.index, "path": path_text, "title": item.title, "status": "pending"}
             for attempt in range(1, config.timing.retries + 2):
                 try:
-                    markdown, previous_hash, location = await _extract_item(page, config, nav, item, previous_hash)
+                    markdown, digest, location = await _extract_item(
+                        page,
+                        config,
+                        walker,
+                        item,
+                        state["previous_hash"],  # type: ignore[arg-type]
+                    )
+                    state["previous_hash"] = digest
                     name = f"{item.index:03d}-{slugify(item.title)}.md"
                     (out / "raw" / name).write_text(_front_matter(item, url, location) + markdown, encoding="utf-8")
                     entry.update(status="ok", file=f"raw/{name}", chars=len(markdown), attempts=attempt)
-                    log.info("✓ %03d %s (%s caracteres)", item.index, item.title, len(markdown))
+                    log.info("✓ %03d %s (%s caracteres)", item.index, path_text, len(markdown))
                     break
                 except (PlaywrightError, LookupError, TimeoutError, ValueError) as error:
                     entry.update(status="error", error=f"{type(error).__name__}: {error}", attempts=attempt)
-                    log.warning("✗ %03d %s — tentativa %s: %s", item.index, item.title, attempt, error)
+                    log.warning("✗ %03d %s — tentativa %s: %s", item.index, path_text, attempt, error)
                     if attempt <= config.timing.retries:
-                        # o menu pode ter sido redesenhado: mapeia de novo antes de tentar outra vez
-                        refreshed = await map_navigation(page, config)
-                        if refreshed:
-                            nav = refreshed
                         await polite_pause((config.timing.min_delay_s, config.timing.max_delay_s))
             report.items.append(entry)
             report.save(out / "manifest.json")
             await polite_pause((config.timing.min_delay_s, config.timing.max_delay_s))
+
+        try:
+            await walker.walk(on_leaf=handle, on_group=handle if config.selectors.include_groups else None)
+        except _LimitReached:
+            log.info("limite de %s item(ns) atingido", limit)
         await _pause(headed, pause)
     return report

@@ -1,3 +1,0 @@
-uv run spa-extract login 
-
-
