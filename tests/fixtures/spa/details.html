@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>Curso com módulos em details</title>
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  .CourseLayout_layout__q1Rt { display: grid; grid-template-columns: 380px 1fr 200px; min-height: 90vh; }
+  .unit-content { list-style: none; padding: 0; }
+  .unit-item { display: inline-flex; align-items: center; gap: 8px; width: 100%; }
+  .unit-item a { flex: 1; display: flex; justify-content: space-between; padding: 8px; }
+  footer ul { display: flex; gap: 16px; list-style: none; }
+</style></head>
+<body>
+<main>
+  <div class="CourseLayout_layout__q1Rt">
+    <div class="CourseLayout_navigation__a8Kd course-nav-slot"></div>
+    <div class="CourseLayout_content__kn2Q"><div id="lesson" class="LessonPage_lessonPage__ttTU"><p>Carregando…</p></div></div>
+    <div class="Promo_banner__Zx9P">Assine o plano com IA.</div>
+  </div>
+</main>
+<footer><ul>
+  <li><a href="/termos">Termos de uso</a></li><li><a href="/privacidade">Privacidade</a></li>
+  <li><a href="/acessibilidade">Acessibilidade</a></li><li><a href="/contato">Contato</a></li>
+  <li><a href="/carreiras">Carreiras</a></li><li><a href="/imprensa">Imprensa</a></li>
+  <li><a href="/cookies">Preferências de cookies</a></li><li><a href="/mapa">Mapa do site</a></li>
+</ul></footer>
+<script>
+  // Árvore de curso como em players feitos em React: cada módulo é um <details role=treeitem> com <summary>; cada lição
+  // um <li role=treeitem> com caixa de progresso e um link cujo texto traz título + duração/status. Só o módulo da lição
+  // retomada (cache) começa aberto. O rodapé chega pronto; o menu do curso, 1,5 s depois.
+  const COURSE = [
+    { title: 'Módulo 1 — Fundamentos', lessons: [
+      ['primeiros-passos', 'Primeiros passos', '3 min', 'Comece pelo mapa do processo atual.'],
+      ['elementos', 'Elementos do processo', '2 min', 'Eventos, atividades e gateways formam o processo.'],
+      ['quiz-1', 'Quiz', 'Concluído', 'Perguntas sobre os fundamentos.'],
+    ]},
+    { title: 'Módulo 2 — Publicação', lessons: [
+      ['feedback', 'Trabalhando com feedback', '5 min', 'Colete feedback antes de publicar o modelo.'],
+      ['quiz-2', 'Quiz', '1 min', 'Perguntas sobre publicação.'],
+    ]},
+  ]
+  let current = 'feedback'
+  const lessons = Object.fromEntries(COURSE.flatMap((m) => m.lessons.map((l) => [l[0], l])))
+  function show() {
+    const [, title, , text] = lessons[current]
+    const article = document.getElementById('lesson')
+    article.innerHTML = ''
+    setTimeout(() => {
+      article.innerHTML = '<h1 class="LessonPage_title__ou">' + title + '</h1>' +
+        '<div class="LessonContent_lessonContainer__jc"><p>' + text + '</p></div>' +
+        '<section class="Feedback_feedbackWrapper__J8"><h3>Esta lição foi útil?</h3><button>Sim</button>' +
+        '<button>Não</button><a href="?licao=proxima">Próxima lição</a></section>'
+    }, 300)
+  }
+  function renderNav() {
+    const tree = document.createElement('div')
+    tree.setAttribute('role', 'tree')
+    tree.setAttribute('aria-label', 'Navegação do curso')
+    tree.className = 'units-navigation'
+    for (const m of COURSE) {
+      const details = document.createElement('details')
+      details.setAttribute('role', 'treeitem')
+      details.setAttribute('aria-level', '1')
+      details.className = 'unit-details'
+      details.open = m.lessons.some((l) => l[0] === current)
+      const summary = document.createElement('summary')
+      summary.className = 'unit-title'
+      summary.tabIndex = 0
+      summary.setAttribute('aria-expanded', String(details.open))
+      summary.innerHTML = '<span>' + m.title + '</span><svg width="16" height="16"><path d="M0 0h16v16z"/></svg>'
+      details.addEventListener('toggle', () => summary.setAttribute('aria-expanded', String(details.open)))
+      const ul = document.createElement('ul')
+      ul.className = 'unit-content'
+      for (const [slug, title, info] of m.lessons) {
+        const li = document.createElement('li')
+        li.setAttribute('role', 'treeitem')
+        li.setAttribute('aria-level', '2')
+        li.className = 'unit-item'
+        li.innerHTML = '<input type="checkbox" tabindex="-1" aria-label="' + title + ' concluída">' +
+          '<a tabindex="-1" href="?licao=' + slug + '"><span class="unit-child-title">' + title + '</span>' +
+          '<span class="lesson-info">' + info + '</span></a>'
+        li.querySelector('a').addEventListener('click', (e) => {
+          e.preventDefault()
+          history.pushState({}, '', '?licao=' + slug)
+          current = slug
+          show()
+        })
+        ul.append(li)
+      }
+      details.append(summary, ul)
+      tree.append(details)
+    }
+    document.querySelector('.course-nav-slot').append(tree)
+  }
+  show()
+  setTimeout(renderNav, 1500)
+</script>
+</body></html>

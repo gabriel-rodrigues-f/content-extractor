@@ -55,6 +55,8 @@ class Selectors:
             "[role=document]",
             "#content, #main-content, .content, .main-content, .page-content, .lesson, .lesson-content",
             ".topic, .module-content, .reader, .markdown-body, .doc-content",
+            # classes geradas por CSS Modules / styled-components (ex.: "LessonPage_content__x1Y2z")
+            '[class*="content" i], [class*="lesson" i], [class*="article" i]',
         ]
     )
     # Ruído de interface removido do conteúdo. AJUSTE acrescentando classes do alvo (ex.: ".btn-next").
@@ -93,6 +95,14 @@ class Selectors:
             "continue",
             "marcar como concluido",
             "mark as complete",
+            "proxima licao",
+            "licao anterior",
+            "proxima aula",
+            "aula anterior",
+            "next lesson",
+            "previous lesson",
+            "esta licao foi util?",
+            "was this lesson helpful?",
             "clique aqui",
             "saiba mais",
             "menu",

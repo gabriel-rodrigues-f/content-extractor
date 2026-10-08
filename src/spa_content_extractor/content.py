@@ -21,6 +21,7 @@ class ContentLocation:
     selector: str
     text_length: int
     heading: str | None
+    exclude: str | None = None  # o menu, quando mora no mesmo frame: nunca entra no conteúdo
 
 
 def normalize(text: str) -> str:
@@ -46,7 +47,13 @@ async def locate_content(
         )
         if not isinstance(found, dict):
             continue
-        location = ContentLocation(frame, found["selector"], int(found["textLength"]), found.get("heading"))
+        location = ContentLocation(
+            frame,
+            found["selector"],
+            int(found["textLength"]),
+            found.get("heading"),
+            exclude=nav_selector if frame == nav_frame else None,
+        )
         # o frame principal costuma "conter" o iframe só como moldura: um frame filho com texto vence empate
         if best is None or location.text_length > best.text_length:
             best = location
@@ -65,7 +72,9 @@ async def content_text(location: ContentLocation | None) -> str:
 
 
 async def serialize(location: ContentLocation) -> str:
-    html = await safe_eval(location.frame, page_scripts.SERIALIZE, location.selector)
+    html = await safe_eval(
+        location.frame, page_scripts.SERIALIZE, {"selector": location.selector, "exclude": location.exclude}
+    )
     return html if isinstance(html, str) else ""
 
 
@@ -76,7 +85,7 @@ def strip_noise(html: str, config: Config) -> BeautifulSoup:
         for el in soup.select(selector):
             el.decompose()
     noise_texts = {normalize(t) for t in config.selectors.noise_texts}
-    for el in soup.find_all(["a", "span", "div", "p", "li"]):
+    for el in soup.find_all(["a", "span", "div", "p", "li", "label", "h2", "h3", "h4", "h5", "h6"]):
         is_leaf = isinstance(el, Tag) and not el.find(["h1", "h2", "h3", "h4", "h5", "h6", "table", "ul", "ol", "pre"])
         if is_leaf and normalize(el.get_text(" ")) in noise_texts:
             el.decompose()

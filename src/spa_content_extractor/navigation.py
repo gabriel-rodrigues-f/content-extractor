@@ -143,12 +143,17 @@ class MenuWalker:
         )
 
     async def _first_snapshot(self) -> _Snapshot | None:
-        """O menu do player pode aparecer alguns segundos depois da página: espera até o tempo de navegação."""
+        """O menu do player pode aparecer (ou terminar de ser desenhado) segundos depois da página: só fixa o menu quando
+        três leituras seguidas concordam (mesmo container, mesmos itens), até o tempo de navegação."""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self.config.timing.navigation_timeout_ms / 1000
+        readings: list[tuple[str, int] | None] = []
         while True:
+            self.container = self.config.selectors.nav_container or None  # ainda não fixado: reavalia a cada leitura
             snap = await self.snapshot()
-            if snap and snap.entries or loop.time() >= deadline:
+            readings.append((snap.container, len(snap.entries)) if snap and snap.entries else None)
+            stable = len(readings) >= 3 and readings[-1] is not None and len(set(readings[-3:])) == 1
+            if stable or loop.time() >= deadline:
                 if snap:
                     log.info("menu encontrado (%s) com %s item(ns) visível(is)", snap.container, len(snap.entries))
                 return snap
@@ -172,8 +177,12 @@ class MenuWalker:
                 continue
             state = await safe_eval(snap.frame, page_scripts.GROUP_STATE, entry.selector)
             if state == "closed" or (state == "unknown" and not snap.children(entry.path)):
+                toggle = snap.frame.locator(entry.selector)
+                summary = toggle.locator(":scope > summary")  # <details>: quem abre é o <summary>
                 try:
-                    await snap.frame.locator(entry.selector).first.click()
+                    if await summary.count():
+                        toggle = summary
+                    await toggle.first.click()
                 except PlaywrightError as error:
                     log.warning("não abriu o grupo %s: %s", entry.title, error)
                     continue
@@ -189,9 +198,11 @@ class MenuWalker:
             return None
         locator = snap.frame.locator(entry.selector)
         try:
-            if await locator.count() == 1:
-                return locator
-            return snap.frame.locator(snap.container).get_by_text(entry.title, exact=True).first
+            if await locator.count() != 1:
+                return snap.frame.locator(snap.container).get_by_text(entry.title, exact=True).first
+            # item que embrulha um único link (ex.: <li> com caixa de progresso + <a>): clica no link, não no meio do <li>
+            link = locator.locator("a[href]")
+            return link if await link.count() == 1 else locator
         except PlaywrightError:
             return None
 

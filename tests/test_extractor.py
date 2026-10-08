@@ -262,3 +262,50 @@ async def test_include_groups_guarda_a_pagina_do_modulo_dentro_da_pasta(spa_url,
     ]
     overview = (Path(report.output) / "raw" / "01-modulo-1-base" / "00-modulo-1-base.md").read_text(encoding="utf-8")
     assert "Visão geral do Módulo 1" in overview
+
+
+DETAILS = [
+    "Módulo 1 — Fundamentos",
+    "Módulo 1 — Fundamentos › Primeiros passos",
+    "Módulo 1 — Fundamentos › Elementos do processo",
+    "Módulo 1 — Fundamentos › Quiz",
+    "Módulo 2 — Publicação",
+    "Módulo 2 — Publicação › Trabalhando com feedback",
+    "Módulo 2 — Publicação › Quiz",
+]
+
+
+def details_config(tmp_path: Path) -> Config:
+    config = fast_config(tmp_path)
+    config.timing.navigation_timeout_ms = 10_000  # um clique num item escondido falha em 10 s, não em 45
+    return config
+
+
+async def test_modulos_em_details_fechado_sao_abertos_antes_do_clique(spa_url, tmp_path):
+    """Módulos em <details> fechados (o conteúdo ainda tem tamanho no Chrome), títulos com duração/status no mesmo link
+    e o rodapé desenhado antes do menu: o menu é a árvore do curso, cada módulo é aberto antes de clicar nas lições e
+    os títulos saem limpos."""
+    url = spa_url.replace("index.html", "details.html")
+    items = await discover(details_config(tmp_path), url, headed=False)
+    assert [" › ".join(i.path) for i in items] == DETAILS
+    assert [i.is_group for i in items] == [True, False, False, False, True, False, False]
+
+
+async def test_modulos_em_details_viram_pastas_com_as_licoes(spa_url, tmp_path):
+    report = await extract(details_config(tmp_path), spa_url.replace("index.html", "details.html"), headed=False)
+    assert [(i["path"], i["status"]) for i in report.items] == [(p, "ok") for p in DETAILS if p.count("›") == 1]
+    assert md_files(report) == [
+        "01-modulo-1-fundamentos/01-primeiros-passos.md",
+        "01-modulo-1-fundamentos/02-elementos-do-processo.md",
+        "01-modulo-1-fundamentos/03-quiz.md",
+        "02-modulo-2-publicacao/01-trabalhando-com-feedback.md",
+        "02-modulo-2-publicacao/02-quiz.md",
+    ]
+    raw = Path(report.output) / "raw"
+    first = (raw / "01-modulo-1-fundamentos" / "01-primeiros-passos.md").read_text(encoding="utf-8")
+    assert "# Primeiros passos" in first and "Comece pelo mapa" in first
+    # o menu mora dentro do <main>, ao lado da lição: nada dele, do banner nem do "foi útil? / próxima lição" entra
+    for noise in ("Elementos do processo", "3 min", "Concluído", "Assine o plano", "foi útil", "Próxima lição"):
+        assert noise not in first
+    assert "fundamentos" in (raw / "01-modulo-1-fundamentos" / "03-quiz.md").read_text(encoding="utf-8")
+    assert "publicação" in (raw / "02-modulo-2-publicacao" / "02-quiz.md").read_text(encoding="utf-8")
