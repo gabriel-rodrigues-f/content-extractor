@@ -6,7 +6,9 @@
 
 # Botões clicados logo depois de abrir a URL, pelo texto visível, em sequência (ex.: entrar no player do curso).
 # Equivale a --start-click na linha de comando.
-# start_click = ["Resume learning"]
+# start_click = ["Resume Learning"]
+# Opcional: texto ou seletor que só existe na página do conteúdo; o extrator espera ele aparecer (= --wait-for).
+# start_wait_for = "nav.course-outline"
 
 # O extrator respeita o robots.txt. Site seu ou com permissão por escrito que bloqueia robôs: cadastre o host e a
 # autorização (fica registrada no log de cada execução).
@@ -46,3 +48,5 @@
 # quiet_ms = 800
 # stable_timeout_ms = 20000
 # retries = 2
+# Depois do clique de entrada, quanto esperar a página do conteúdo aparecer (segundos).
+# transition_timeout_s = 30

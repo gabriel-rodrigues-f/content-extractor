@@ -7,6 +7,7 @@ de uma SPA é redesenhado o tempo todo e títulos se repetem entre módulos ("Re
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
@@ -119,6 +120,18 @@ class MenuWalker:
         self.frame = frame
         return _Snapshot(frame=frame, container=data["container"], entries=_with_paths(data["items"]))
 
+    async def _first_snapshot(self) -> _Snapshot | None:
+        """O menu do player pode aparecer alguns segundos depois da página: espera até o tempo de navegação."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.config.timing.navigation_timeout_ms / 1000
+        while True:
+            snap = await self.snapshot()
+            if snap and snap.entries or loop.time() >= deadline:
+                if snap:
+                    log.info("menu encontrado (%s) com %s item(ns) visível(is)", snap.container, len(snap.entries))
+                return snap
+            await asyncio.sleep(1)
+
     async def _settle(self, frame: Frame) -> None:
         await polite_pause((0.4, 0.8))
         await safe_eval(frame, page_scripts.WAIT_QUIET, {"quietMs": 500, "timeoutMs": 5_000})
@@ -167,7 +180,7 @@ class MenuWalker:
         max_visits: int = 2_000,
     ) -> None:
         async def visit(path: Path) -> None:
-            snap = await self.ensure_open(path) if path else await self.snapshot()
+            snap = await self.ensure_open(path) if path else await self._first_snapshot()
             if snap is None:
                 raise RuntimeError("nenhum menu encontrado — ajuste selectors.nav_container no extractor.toml")
             for child in snap.children(path):

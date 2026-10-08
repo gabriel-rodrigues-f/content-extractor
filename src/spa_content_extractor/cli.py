@@ -20,6 +20,11 @@ def _common(parser: argparse.ArgumentParser) -> None:
         metavar="TEXTO",
         help='clica num botão pelo texto logo ao abrir (ex.: "Resume learning"); repita para vários',
     )
+    parser.add_argument(
+        "--wait-for",
+        metavar="TEXTO_OU_SELETOR",
+        help="só começa quando isto aparecer na página do conteúdo (ex.: um título do player)",
+    )
     parser.add_argument("--pause", action="store_true", help="com --headed, deixa o navegador aberto até o Enter")
     parser.add_argument("--include-groups", action="store_true", help="extrai também a página dos módulos/grupos")
 
@@ -72,6 +77,8 @@ def _run(argv: list[str] | None) -> int:
         config.start_click = [*config.start_click, *args.start_click]
     if getattr(args, "include_groups", False):
         config.selectors.include_groups = True
+    if getattr(args, "wait_for", None):
+        config.start_wait_for = args.wait_for
 
     if args.command == "login":
         from .auth import login

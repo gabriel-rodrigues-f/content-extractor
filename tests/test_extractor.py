@@ -4,6 +4,8 @@ renderização progressiva com spinner, shadow DOM e ruído de interface."""
 import json
 from pathlib import Path
 
+import pytest
+
 from spa_content_extractor.config import Config, Timing
 from spa_content_extractor.extractor import discover, extract, slugify
 
@@ -147,3 +149,29 @@ async def test_sanfona_extrai_todas_as_licoes_na_ordem_do_curso(spa_url, tmp_pat
     assert "Compare cenários" in (raw / "011-resumo.md").read_text(encoding="utf-8")
     cenarios = (raw / "010-licao-3-2-cenarios.md").read_text(encoding="utf-8")
     assert "mesma seed" in cenarios  # a lição que já estava aberta também é extraída
+
+
+async def test_resume_learning_espera_o_player_na_mesma_url(spa_url, tmp_path):
+    """A página de entrada tem um sumário que parece menu; o clique troca a página pelo player só depois de 1,5 s e
+    sem mudar a URL. O extrator precisa esperar o player — nunca mapear o sumário da entrada."""
+    config = fast_config(tmp_path)
+    config.start_click = ["Resume Learning"]
+    url = spa_url.replace("index.html", "landing-spa.html")
+    items = await discover(config, url, headed=False)
+    paths = [" › ".join(i.path) for i in items]
+    assert paths[0] == "Módulo 1 — Introdução"
+    assert "Módulo 3 — Simulação › Resumo" in paths
+    assert not any("Unidade 1: Introdução ao curso" in p for p in paths)
+
+    report = await extract(config, url, headed=False, limit=1)
+    assert [(i["path"], i["status"]) for i in report.items] == [
+        ("Módulo 1 — Introdução › Lição 1.1 — Visão geral", "ok")
+    ]
+
+
+async def test_botao_que_nao_leva_a_lugar_nenhum_para_com_mensagem(spa_url, tmp_path):
+    config = fast_config(tmp_path)
+    config.start_click = ["Resume Learning"]
+    config.timing.transition_timeout_s = 3
+    with pytest.raises(LookupError, match="a página não mudou"):
+        await discover(config, spa_url.replace("index.html", "landing-dead.html"), headed=False)

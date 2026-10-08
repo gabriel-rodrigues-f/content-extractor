@@ -29,8 +29,14 @@ mantêm a linguagem.
 
 ### Ação de entrada e ordem de navegação
 
-- `--start-click "Resume learning"` (ou `start_click` no `extractor.toml`) clica no botão pelo texto logo ao abrir; se o
-  clique abrir outra aba, a extração segue nela. Repita a opção para vários cliques em sequência.
+- `--start-click "Resume Learning"` (ou `start_click` no `extractor.toml`) clica no botão pelo texto (sem diferenciar
+  maiúsculas) e **só segue quando a página do conteúdo abriu de verdade**: outra URL, outra aba (mesmo que demore) ou o
+  botão sumiu e o texto da página mudou (SPA na mesma URL). Sem transição em `transition_timeout_s` (30 s), para com
+  uma mensagem — nunca extrai a página de entrada. Depois espera o menu do player aparecer.
+- `--wait-for "texto ou seletor"` (ou `start_wait_for`): opcional, algo que só existe no player; o extrator espera ele
+  aparecer antes de começar.
+- O terminal mostra cada etapa (clique, espera, "página do conteúdo carregada: …"); sem `--start-click`, avisa que
+  vai extrair a página que abriu.
 - O menu é percorrido **em profundidade, sempre a partir do primeiro item**: abre o primeiro módulo, entra em cada
   tópico (e em cada unidade dentro dele, recursivamente), extrai, e só então passa ao segundo módulo — até o último.
   Não importa em que lição o player abriu (cache/"retomar de onde parou") nem se o menu é "sanfona" (abrir um módulo

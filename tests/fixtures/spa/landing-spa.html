@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Curso — visão geral</title></head>
+<body>
+<header><a href="#">Catálogo</a> <a href="#">Minha conta</a></header>
+<main>
+  <h1>Gestão de Processos</h1>
+  <p>Visão geral do curso, com o sumário abaixo. O conteúdo das lições só aparece no player.</p>
+  <button id="resume">Resume Learning</button>
+  <!-- sumário da página de entrada: parece um menu, mas NÃO é o conteúdo a extrair -->
+  <nav class="course-summary" aria-label="Sumário do curso">
+    <ul>
+      <li><a href="#">Unidade 1: Introdução ao curso</a></li>
+      <li><a href="#">Unidade 2: Modelagem de processos</a></li>
+      <li><a href="#">Unidade 3: Simulação e cenários</a></li>
+      <li><a href="#">Avaliação final</a></li>
+    </ul>
+  </nav>
+</main>
+<script>
+  // SPA: o clique busca o player e troca o documento inteiro na MESMA URL, depois de uma "chamada ao servidor"
+  document.getElementById('resume').addEventListener('click', () => {
+    setTimeout(async () => {
+      const html = await (await fetch('accordion.html')).text()
+      document.open()
+      document.write(html)
+      document.close()
+    }, 1500)
+  })
+</script>
+</body></html>

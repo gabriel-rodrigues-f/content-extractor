@@ -112,6 +112,8 @@ class Timing:
     quiet_ms: int = 800
     stable_timeout_ms: int = 20_000
     navigation_timeout_ms: int = 45_000
+    # Depois do clique de entrada ("Resume Learning"): quanto esperar a página do conteúdo aparecer.
+    transition_timeout_s: int = 30
     retries: int = 2
 
 
@@ -122,6 +124,9 @@ class Config:
     # Botões clicados em sequência logo depois de abrir a URL, pelo texto visível (ex.: ["Resume learning"]).
     # AJUSTE aqui ou passe --start-click na linha de comando.
     start_click: list[str] = field(default_factory=list)
+    # Opcional: texto ou seletor que só existe na página do conteúdo (ex.: "Lesson 1" ou "nav.course-outline"). O
+    # extrator espera ele aparecer antes de começar. Equivale a --wait-for.
+    start_wait_for: str = ""
     # O extrator respeita o robots.txt. Site seu ou com permissão por escrito que bloqueia robôs: cadastre o host com a
     # autorização (fica registrada no log de cada execução). Ex.: {"treinamento.minhaempresa.com" = "site próprio"}
     authorized_hosts: dict[str, str] = field(default_factory=dict)
