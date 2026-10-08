@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"></head>
+<body>
+<article class="lesson-content"><p class="placeholder">Selecione uma lição no menu.</p></article>
+<nav class="lesson-nav"><button>Anterior</button><button>Próximo</button></nav>
+<script>
+  class LessonCallout extends HTMLElement {
+    connectedCallback() {
+      const root = this.attachShadow({ mode: 'open' })
+      root.innerHTML = '<div class="callout"><strong>Importante:</strong> <slot></slot>' + this.getAttribute('text') + '</div>'
+    }
+  }
+  customElements.define('lesson-callout', LessonCallout)
+  const LESSONS = {
+    bpm: {
+      title: 'O que é BPM',
+      parts: [
+        '<p>Business Process Management é a disciplina que trata processos como ativos da organização.</p>',
+        '<ul><li>Modelar</li><li>Executar</li><li>Monitorar</li><li>Otimizar</li></ul>',
+        '<div class="note"><strong>Nota:</strong> BPM não é software; é gestão.</div><a href="#">Marcar como concluído</a>',
+      ],
+    },
+    bpmn: {
+      title: 'Notação BPMN',
+      parts: [
+        '<p>BPMN 2.0 define eventos, atividades, gateways e fluxos.</p>',
+        '<table><thead><tr><th>Elemento</th><th>Uso</th></tr></thead><tbody><tr><td>Gateway exclusivo</td><td>Decisão</td></tr><tr><td>Gateway paralelo</td><td>Paralelismo</td></tr></tbody></table>',
+        '<img src="diagrama.png"><p>Exemplo em código:</p><pre><code class="language-xml">&lt;bpmn:task id="Task_1" /&gt;</code></pre>',
+      ],
+    },
+    montecarlo: {
+      title: 'Monte Carlo',
+      parts: [
+        '<p>A simulação de Monte Carlo repete o processo com tempos sorteados.</p>',
+        '<h3>Réplicas</h3><p>Mais réplicas reduzem a variância das médias.</p>',
+        '<lesson-callout text="use a mesma seed para comparar cenários."></lesson-callout>',
+      ],
+    },
+  }
+  const article = document.querySelector('.lesson-content')
+  window.addEventListener('message', (e) => {
+    const lesson = LESSONS[e.data.lesson]
+    article.innerHTML = '<h1>' + lesson.title + '</h1>'
+    // renderização progressiva: o conteúdo chega em partes (o extrator precisa esperar estabilizar)
+    lesson.parts.forEach((html, i) => setTimeout(() => article.insertAdjacentHTML('beforeend', html), 300 * (i + 1)))
+  })
+</script>
+</body></html>

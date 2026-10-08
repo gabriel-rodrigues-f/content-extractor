@@ -1,0 +1,37 @@
+[project]
+name = "spa-content-extractor"
+version = "0.1.0"
+description = "Extrai o conteúdo textual de SPAs (menus dinâmicos, iframes aninhados, shadow DOM) para Markdown"
+authors = [
+    { name = "gabriel-rodrigues-f", email = "gabrielvinicius.rodrigues@outlook.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "markdownify>=1.2.3",
+    "playwright>=1.63.0",
+    "python-dotenv>=1.2.4",
+    "sap-ai-sdk-gen>=7.4.1",
+]
+
+[project.scripts]
+spa-extract = "spa_content_extractor.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.10",
+]

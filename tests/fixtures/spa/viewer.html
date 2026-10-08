@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><style>body{margin:0} iframe{width:100%;height:95vh;border:0}</style></head>
+<body>
+<div class="viewer-toolbar" role="toolbar"><button>Imprimir</button><button>Tela cheia</button></div>
+<iframe id="inner" src="lesson.html" title="Lição"></iframe>
+<script>
+  window.addEventListener('message', (e) => document.getElementById('inner').contentWindow.postMessage(e.data, '*'))
+</script>
+</body></html>

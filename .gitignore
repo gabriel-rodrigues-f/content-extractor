@@ -1,0 +1,17 @@
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Sessões de login (cookies = credenciais) e chave do SAP AI Core: nunca no git
+.auth/
+.env*
+!.env.example
+
+# Conteúdo extraído (pode ser material licenciado do alvo): fica local
+output/
+
+# Configuração do alvo (seletores e URL específicos): copie de extractor.example.toml
+extractor.toml
