@@ -18,7 +18,8 @@ def _common(parser: argparse.ArgumentParser) -> None:
         action="append",
         default=[],
         metavar="TEXTO",
-        help='clica num botão pelo texto logo ao abrir (ex.: "Resume learning"); repita para vários',
+        help='clica num botão pelo texto logo ao abrir (ex.: "Start learning|Resume learning" = um ou outro); '
+        "repita para vários em sequência; substitui o start_click do extractor.toml",
     )
     parser.add_argument(
         "--wait-for",
@@ -49,6 +50,7 @@ def _parser() -> argparse.ArgumentParser:
     ext.add_argument("--only", help="regex no título dos itens a extrair")
     ext.add_argument("--limit", type=int, help="no máximo N itens (teste)")
     ext.add_argument("--name", help="nome da pasta do curso (padrão: título da página de entrada)")
+    ext.add_argument("--group", help='pasta que agrupa cursos (ex.: "signavio" → output/00-signavio/00-<curso>/)')
     _common(ext)
 
     fmt = sub.add_parser("format", help="formata os .md brutos de uma execução com Claude no SAP AI Core")
@@ -77,13 +79,15 @@ def _run(argv: list[str] | None) -> int:
     )
     config = load_config(args.config)
     if getattr(args, "start_click", None):
-        config.start_click = [*config.start_click, *args.start_click]
+        config.start_click = args.start_click
     if getattr(args, "include_groups", False):
         config.selectors.include_groups = True
     if getattr(args, "wait_for", None):
         config.start_wait_for = args.wait_for
     if getattr(args, "name", None):
         config.course_name = args.name
+    if getattr(args, "group", None):
+        config.group = args.group
 
     if args.command == "login":
         from .auth import login

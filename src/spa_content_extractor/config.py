@@ -135,7 +135,11 @@ class Config:
     timing: Timing = field(default_factory=Timing)
     # Botões clicados em sequência logo depois de abrir a URL, pelo texto visível (ex.: ["Resume learning"]).
     # AJUSTE aqui ou passe --start-click na linha de comando.
+    # Alternativas no mesmo passo separadas por "|": ["Start learning|Resume learning"].
     start_click: list[str] = field(default_factory=list)
+    # true: se nenhum botão de entrada aparecer, a URL já abriu na página do conteúdo — segue sem clicar (a extração
+    # sempre começa pelo primeiro item do menu). false: botão ausente é erro.
+    start_click_optional: bool = False
     # Opcional: texto ou seletor que só existe na página do conteúdo (ex.: "Lesson 1" ou "nav.course-outline"). O
     # extrator espera ele aparecer antes de começar. Equivale a --wait-for.
     start_wait_for: str = ""
@@ -145,8 +149,12 @@ class Config:
     # Cada curso vira output/NN-<curso>/ (NN crescente); a formatação com IA grava em knowledge/NN-<curso>/.
     output_dir: Path = Path("output")
     knowledge_dir: Path = Path("knowledge")
-    # Nome da pasta do curso. Vazio = título da página de entrada. Equivale a --name.
+    # Nome da pasta do curso. Vazio = título da página de entrada (ou, se a URL já abriu numa lição, o curso no
+    # caminho de navegação). Equivale a --name.
     course_name: str = ""
+    # Pasta que agrupa cursos (ex.: "signavio" → output/00-signavio/00-<curso>/…). Vazio = direto em output/.
+    # Equivale a --group.
+    group: str = ""
     auth_dir: Path = Path(".auth")
     # "chromium" (o do Playwright) ou "chrome" (o Google Chrome instalado).
     browser_channel: str = "chromium"

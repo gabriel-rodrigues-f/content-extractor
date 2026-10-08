@@ -6,7 +6,9 @@
 
 # Botões clicados logo depois de abrir a URL, pelo texto visível, em sequência (ex.: entrar no player do curso).
 # Equivale a --start-click na linha de comando.
-# start_click = ["Resume Learning"]
+# Alternativas no mesmo passo com "|". Com start_click_optional = true, botão ausente = a URL já abriu no conteúdo.
+# start_click = ["Start learning|Resume learning"]
+# start_click_optional = true
 # Opcional: texto ou seletor que só existe na página do conteúdo; o extrator espera ele aparecer (= --wait-for).
 # start_wait_for = "nav.course-outline"
 

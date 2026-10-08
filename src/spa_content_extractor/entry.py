@@ -102,24 +102,41 @@ async def _wait_for_marker(page: Page, marker: str, timeout_ms: int) -> None:
     raise LookupError(f'a página do conteúdo não mostrou "{marker}" em {timeout_ms // 1000} s')
 
 
-async def run_start_actions(context: BrowserContext, page: Page, config: Config, texts: list[str]) -> Page:
+async def _find_any(page: Page, options: list[str]) -> tuple[str, Locator | None]:
+    for option in options:
+        target = await _find_clickable(page, option)
+        if target:
+            return option, target
+    return options[0], None
+
+
+async def run_start_actions(context: BrowserContext, page: Page, config: Config, texts: list[str]) -> tuple[Page, bool]:
+    """Clica em cada botão de entrada, em sequência. Cada um aceita alternativas separadas por "|" (ex.: "Start
+    learning|Resume learning": curso novo ou já iniciado). Com `start_click_optional`, botão ausente quer dizer que a URL
+    já abriu na página do conteúdo: segue sem clicar. Devolve a página do conteúdo e se algum botão foi clicado."""
+    clicked = False
     if not texts:
         log.info("sem ação de entrada (--start-click): a extração começa na página que abriu")
     for text in texts:
-        target = None
+        options = [option.strip() for option in text.split("|") if option.strip()]
+        label, target = options[0], None
         for _ in range(15):  # o botão pode demorar a aparecer numa SPA
-            target = await _find_clickable(page, text)
+            label, target = await _find_any(page, options)
             if target:
                 break
             await page.wait_for_timeout(1_000)
         if target is None:
+            if config.start_click_optional:
+                log.info('sem botão "%s": a página já é a do conteúdo; começa pelo primeiro item do menu', text)
+                continue
             raise LookupError(f'botão "{text}" não encontrado na página de entrada')
         await polite_pause(config.timing.pre_click_delay_s)
-        log.info('clicando em "%s" e aguardando a página do conteúdo…', text)
-        page = await _wait_transition(context, page, target, text, config.timing.transition_timeout_s)
+        log.info('clicando em "%s" e aguardando a página do conteúdo…', label)
+        page = await _wait_transition(context, page, target, label, config.timing.transition_timeout_s)
+        clicked = True
         await _settle(page)
     if config.start_wait_for:
         await _wait_for_marker(page, config.start_wait_for, config.timing.navigation_timeout_ms)
     if texts or config.start_wait_for:
         log.info("página do conteúdo carregada: %s", page.url)
-    return page
+    return page, clicked

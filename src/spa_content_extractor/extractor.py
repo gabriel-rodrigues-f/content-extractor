@@ -54,28 +54,40 @@ class RunReport:
         path.write_text(json.dumps(self.__dict__, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def course_dir(config: Config, url: str, name: str) -> Path:
-    """Pasta do curso direto em output/: `NN-<curso>`, com NN crescente na ordem em que os cursos são baixados
-    (00, 01, 02…). O mesmo curso (mesma URL, pelo manifest.json de uma extração anterior) volta para a pasta que já
-    tem, com o mesmo número — mesmo que alguém a tenha renomeado."""
-    root = config.output_dir
+def _extracted_from(folder: Path, url: str) -> bool:
+    for manifest_file in folder.glob("*/manifest.json"):
+        try:
+            manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if str(manifest.get("url", "")).rstrip("/") == url.rstrip("/"):
+            return True
+    return False
+
+
+def _numbered(root: Path, name: str, url: str | None = None) -> Path:
+    """`NN-<nome>` dentro de root, com NN crescente na ordem de criação (00, 01, 02…). Reaproveita a pasta de mesmo
+    nome ou, para um curso, a que já tem uma extração da mesma URL (mesmo que alguém a tenha renomeado)."""
     root.mkdir(parents=True, exist_ok=True)
+    slug = slugify(name, 80)
     numbers: list[int] = []
     for folder in sorted(root.iterdir()):
-        match = re.match(r"(\d+)-", folder.name)
+        match = re.match(r"(\d+)-(.*)", folder.name)
         if not folder.is_dir() or not match:
             continue
         numbers.append(int(match.group(1)))
-        for manifest_file in sorted(folder.glob("*/manifest.json")):
-            try:
-                manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            if str(manifest.get("url", "")).rstrip("/") == url.rstrip("/"):
-                return folder
-    path = root / f"{(max(numbers) + 1 if numbers else 0):02d}-{slugify(name, 80)}"
+        if match.group(2) == slug or (url and _extracted_from(folder, url)):
+            return folder
+    path = root / f"{(max(numbers) + 1 if numbers else 0):02d}-{slug}"
     path.mkdir()
     return path
+
+
+def course_dir(config: Config, url: str, name: str) -> Path:
+    """Pasta do curso: output/[NN-<grupo>/]NN-<curso>, numeradas na ordem em que são criadas. O mesmo curso (mesmo
+    nome ou mesma URL) volta para a pasta e o número que já tem."""
+    root = _numbered(config.output_dir, config.group) if config.group else config.output_dir
+    return _numbered(root, name, url)
 
 
 async def course_name(page: Page, url: str) -> str:
@@ -91,6 +103,22 @@ async def course_name(page: Page, url: str) -> str:
             return candidate.strip()
     parsed = urlparse(url)
     return parsed.path.rstrip("/").rsplit("/", 1)[-1] or parsed.hostname or "curso"
+
+
+async def parent_name(page: Page, url: str) -> str | None:
+    """Nome do curso quando a URL já abriu numa lição: o penúltimo item do caminho de navegação (Cursos › <curso> ›
+    <lição>) ou o penúltimo trecho da URL (/courses/<curso>/<lição>)."""
+    try:
+        crumbs = await page.evaluate(
+            "() => Array.from(document.querySelectorAll('nav[aria-label*=readcrumb i] li, [class*=breadcrumb i] li'))"
+            ".map((li) => (li.innerText || '').replace(/[\\s/›>»]+$/, '').trim()).filter(Boolean)"
+        )
+    except PlaywrightError:
+        crumbs = []
+    if isinstance(crumbs, list) and len(crumbs) >= 2:
+        return str(crumbs[-2])
+    segments = [s for s in urlparse(url).path.split("/") if s]
+    return segments[-2].replace("-", " ") if len(segments) >= 2 else None
 
 
 async def _open(page: Page, url: str) -> None:
@@ -112,7 +140,7 @@ async def discover(config: Config, url: str, *, headed: bool, pause: bool = Fals
     ensure_allowed(url, config)
     async with open_browser(config, url, headed=headed) as (context, page):
         await _open(page, url)
-        page = await run_start_actions(context, page, config, config.start_click)
+        page, _ = await run_start_actions(context, page, config, config.start_click)
         walker = MenuWalker(page, config)
         items: list[NavItem] = []
 
@@ -197,12 +225,16 @@ async def extract(
     async with open_browser(config, url, headed=headed) as (context, page):
         await _open(page, url)
         # o nome vem da página de entrada, antes do "Resume Learning" (no player, o título já é o da lição)
-        course = course_dir(config, url, config.course_name or await course_name(page, url))
+        name = config.course_name or await course_name(page, url)
+        page, clicked = await run_start_actions(context, page, config, config.start_click)
+        if config.start_click and not clicked and not config.course_name:
+            # a URL já abriu numa lição: o curso está no caminho de navegação
+            name = await parent_name(page, url) or name
+        course = course_dir(config, url, name)
         out = course / datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")  # hora local
         out.mkdir(exist_ok=True)
         log.info("extração em %s", out)
         report = RunReport(url=url, started_at=datetime.now(UTC).isoformat(timespec="seconds"), output=str(out))
-        page = await run_start_actions(context, page, config, config.start_click)
         walker = MenuWalker(page, config)
         state: dict[str, object] = {"previous_hash": None}
         entries: dict[tuple[str, ...], dict] = {}  # caminho do item → entrada no manifesto

@@ -333,3 +333,18 @@ async def test_cada_curso_ganha_uma_pasta_numerada_direto_em_output(spa_url, tmp
     assert Path(first.output) != Path(again.output)  # duas extrações, duas pastas de data
     assert (Path(first.output) / "manifest.json").exists()
     assert (Path(first.output) / "01-modulo-1-base" / "01-aula-1-1-conceitos.md").exists()
+
+
+async def test_start_ou_resume_e_url_que_ja_abre_no_conteudo(spa_url, tmp_path):
+    """Com "Start learning|Resume learning", clica no que existir; com start_click_optional, uma URL que já abre no player
+    (sem botão) começa direto pelo primeiro item do menu. --group agrupa os cursos numa pasta numerada."""
+    config = fast_config(tmp_path)
+    config.start_click = ["Start learning|Resume learning"]
+    config.start_click_optional = True
+    config.group = "Signavio"
+    items = await discover(config, spa_url.replace("index.html", "landing.html"), headed=False)
+    assert "Lição 1.3 — Gateways" in [i.title for i in items]  # achou o "Resume learning"
+
+    report = await extract(config, spa_url.replace("index.html", "accordion.html"), headed=False, limit=1)
+    assert [i["path"] for i in report.items] == ["Módulo 1 — Introdução › Lição 1.1 — Visão geral"]
+    assert Path(report.output).parent == config.output_dir / "00-signavio" / "00-player-sanfona"
