@@ -32,10 +32,15 @@ class Selectors:
     # Itens clicáveis dentro do menu. AJUSTE se os itens forem <div>s sem papel acessível.
     nav_item: str = (
         "a, button, [role=treeitem], [role=menuitem], [role=tab], [role=link], [role=option], "
-        "li[tabindex], [onclick], summary"
+        "li[tabindex], [onclick], summary, [aria-expanded], [data-state]"
     )
-    # Abrir grupos recolhidos (módulos com lições dentro) antes de mapear.
+    # Abrir grupos recolhidos (módulos → unidades → lições), nível por nível, até não aparecer item novo.
     expand_collapsed: bool = True
+    # O que conta como "grupo fechado" no menu. AJUSTE acrescentando a classe do alvo (ex.: ".chevron-closed").
+    expanders: str = "[aria-expanded=false], [data-state=closed], .collapsed, .is-collapsed"
+    max_expand_rounds: int = 10
+    # Também extrair a página do próprio grupo (quando o módulo tem uma visão geral própria).
+    include_groups: bool = False
 
     # Container do conteúdo. Se `content_container` estiver vazio, vence o candidato com mais texto (em
     # qualquer frame, inclusive iframes aninhados) que não seja o menu. AJUSTE para fixar o container.
@@ -114,6 +119,12 @@ class Timing:
 class Config:
     selectors: Selectors = field(default_factory=Selectors)
     timing: Timing = field(default_factory=Timing)
+    # Botões clicados em sequência logo depois de abrir a URL, pelo texto visível (ex.: ["Resume learning"]).
+    # AJUSTE aqui ou passe --start-click na linha de comando.
+    start_click: list[str] = field(default_factory=list)
+    # O extrator respeita o robots.txt. Site seu ou com permissão por escrito que bloqueia robôs: cadastre o host com a
+    # autorização (fica registrada no log de cada execução). Ex.: {"treinamento.minhaempresa.com" = "site próprio"}
+    authorized_hosts: dict[str, str] = field(default_factory=dict)
     output_dir: Path = Path("output")
     auth_dir: Path = Path(".auth")
     # "chromium" (o do Playwright) ou "chrome" (o Google Chrome instalado).

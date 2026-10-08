@@ -56,12 +56,18 @@ DISCOVER_NAV = (
       seen.add(key)
       let depth = 0
       for (let p = el.parentElement; p && p !== container; p = p.parentElement) if (p.matches('ul, ol, [role=group]')) depth++
+      const cls = el.getAttribute('class') || ''
       items.push({
         title,
         selector: cssPath(el),
         depth,
         href: el.getAttribute('href') || null,
-        expanded: el.getAttribute('aria-expanded'),
+        // grupo = abre/fecha subitens (aria-expanded, data-state, <summary>, classe collapsed/expanded)
+        group:
+          el.hasAttribute('aria-expanded') ||
+          el.hasAttribute('data-state') ||
+          el.tagName === 'SUMMARY' ||
+          /(^|\s)(is-)?(collapsed|expanded)(\s|$)/.test(cls),
       })
     }
     return items
@@ -87,14 +93,17 @@ DISCOVER_NAV = (
 """
 )
 
-# Abre grupos recolhidos (aria-expanded=false, <details>) dentro do menu. Devolve quantos abriu.
+# Abre grupos fechados (seletores `expanders` + <details>) visíveis dentro do menu. Devolve quantos abriu; quem chama
+# repete em rodadas, porque cada nível aberto revela o seguinte.
 EXPAND_COLLAPSED = r"""
-(containerSelector) => {
+({ containerSelector, expanders }) => {
   const root = containerSelector ? document.querySelector(containerSelector) : document
   if (!root) return 0
   let opened = 0
   for (const d of root.querySelectorAll('details:not([open])')) { d.open = true; opened++ }
-  for (const el of root.querySelectorAll('[aria-expanded=false]')) {
+  for (const el of root.querySelectorAll(expanders)) {
+    const r = el.getBoundingClientRect()
+    if (r.width === 0 && r.height === 0) continue  // dentro de um grupo ainda fechado: abre na próxima rodada
     try { el.click(); opened++ } catch (e) {}
   }
   return opened

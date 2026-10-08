@@ -19,6 +19,11 @@
       <ul hidden>
         <li><a data-lesson="bpm">Lição 1.1 — O que é BPM</a></li>
         <li><a data-lesson="bpmn">Lição 1.2 — Notação BPMN</a></li>
+        <li><div class="unit-toggle" data-state="closed" tabindex="0">Unidade 1.B — Avançado</div>
+          <ul hidden>
+            <li><a data-lesson="gateways">Lição 1.3 — Gateways</a></li>
+          </ul>
+        </li>
       </ul>
     </li>
     <li><button class="module" aria-expanded="false">Módulo 2 — Simulação</button>
@@ -40,6 +45,14 @@
       const open = b.getAttribute('aria-expanded') === 'true'
       b.setAttribute('aria-expanded', String(!open))
       b.nextElementSibling.hidden = open
+    })
+  }
+  // segundo nível sem aria-expanded: o estado vem em data-state (como em muitos LMS)
+  for (const u of document.querySelectorAll('.unit-toggle')) {
+    u.addEventListener('click', () => {
+      const open = u.dataset.state === 'open'
+      u.dataset.state = open ? 'closed' : 'open'
+      u.nextElementSibling.hidden = open
     })
   }
   const spinner = document.querySelector('.spinner')

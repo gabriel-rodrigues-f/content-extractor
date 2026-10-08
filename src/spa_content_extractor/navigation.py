@@ -24,7 +24,8 @@ class NavItem:
     depth: int
     href: str | None
     frame_url: str
-    # grupo = cabeçalho que abre/fecha lições (aria-expanded): vira contexto, não é extraído
+    # grupo = cabeçalho que abre/fecha subitens: vira contexto (caminho "Módulo › Unidade"); só é extraído com
+    # include_groups
     is_group: bool = False
     group: str | None = None
 
@@ -58,28 +59,37 @@ async def _discover_in_frames(page: Page, config: Config) -> tuple[Frame, dict] 
     return best
 
 
+def _expand_arg(container: str, config: Config) -> dict:
+    return {"containerSelector": container, "expanders": config.selectors.expanders}
+
+
 async def map_navigation(page: Page, config: Config) -> NavMap | None:
     found = await _discover_in_frames(page, config)
     if found is None:
         return None
     frame, data = found
     if config.selectors.expand_collapsed:
-        # abre módulos recolhidos até não haver mais o que abrir (no máximo 5 rodadas: menus em árvore)
-        for _ in range(5):
-            opened = await safe_eval(frame, page_scripts.EXPAND_COLLAPSED, data["container"])
+        # abre o menu nível por nível (módulo → unidade → lição) até não aparecer item novo
+        seen = len(data["items"])
+        for round_ in range(1, config.selectors.max_expand_rounds + 1):
+            opened = await safe_eval(frame, page_scripts.EXPAND_COLLAPSED, _expand_arg(data["container"], config))
             if not opened:
                 break
-            log.info("abri %s grupo(s) recolhido(s) no menu", opened)
             await polite_pause((0.5, 1.0))
+            await safe_eval(frame, page_scripts.WAIT_QUIET, {"quietMs": 500, "timeoutMs": 5_000})  # filhos sob demanda
             refreshed = await _discover_in_frames(page, config)
             if refreshed is None:
                 break
             frame, data = refreshed
+            log.info("rodada %s: abri %s grupo(s); %s item(ns) no menu", round_, opened, len(data["items"]))
+            if len(data["items"]) == seen:
+                break
+            seen = len(data["items"])
     items: list[NavItem] = []
-    groups: dict[int, str] = {}  # profundidade → título do grupo aberto mais recente
+    groups: dict[int, str] = {}  # profundidade → título do grupo aberto mais recente nessa profundidade
     for i, raw in enumerate(data["items"]):
-        is_group = raw.get("expanded") is not None
-        parent = next((groups[d] for d in sorted(groups, reverse=True) if d < raw["depth"]), None)
+        is_group = bool(raw.get("group"))
+        path = " › ".join(groups[d] for d in sorted(groups) if d < raw["depth"]) or None
         items.append(
             NavItem(
                 index=i + 1,
@@ -89,7 +99,7 @@ async def map_navigation(page: Page, config: Config) -> NavMap | None:
                 href=raw.get("href"),
                 frame_url=frame.url,
                 is_group=is_group,
-                group=parent,
+                group=path,
             )
         )
         if is_group:
@@ -102,7 +112,7 @@ async def reopen_groups(nav: NavMap, config: Config) -> None:
     """Clicar numa lição pode recolher o módulo em alguns menus: reabre antes de procurar o próximo item."""
     if not config.selectors.expand_collapsed or nav.frame.is_detached():
         return
-    if await safe_eval(nav.frame, page_scripts.EXPAND_COLLAPSED, nav.container):
+    if await safe_eval(nav.frame, page_scripts.EXPAND_COLLAPSED, _expand_arg(nav.container, config)):
         await polite_pause((0.3, 0.6))
 
 

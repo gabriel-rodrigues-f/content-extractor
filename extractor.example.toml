@@ -3,6 +3,16 @@
 # clique com o botão direito no elemento → Copy → Copy selector (prefira ids e classes estáveis a posições).
 
 # browser_channel = "chrome"     # usa o Google Chrome instalado em vez do Chromium do Playwright
+
+# Botões clicados logo depois de abrir a URL, pelo texto visível, em sequência (ex.: entrar no player do curso).
+# Equivale a --start-click na linha de comando.
+# start_click = ["Resume learning"]
+
+# O extrator respeita o robots.txt. Site seu ou com permissão por escrito que bloqueia robôs: cadastre o host e a
+# autorização (fica registrada no log de cada execução).
+# [authorized_hosts]
+# "treinamento.minhaempresa.com" = "site próprio da empresa"
+
 # output_dir = "output"
 
 [selectors]
@@ -10,8 +20,13 @@
 # nav_container = "aside.course-outline"
 # Itens clicáveis dentro do menu (quando são <div>s sem papel acessível, por exemplo).
 # nav_item = "a, .outline-item"
-# Abrir módulos recolhidos antes de mapear.
+# Abrir os grupos do menu nível por nível (módulo → unidade → lição) antes de mapear.
 # expand_collapsed = true
+# O que conta como grupo FECHADO. Acrescente a classe do alvo (F12 no ícone de seta do menu).
+# expanders = "[aria-expanded=false], [data-state=closed], .collapsed, .is-collapsed, .chevron-right"
+# max_expand_rounds = 10
+# Extrair também a página do próprio módulo/grupo (quando ele tem visão geral).
+# include_groups = false
 
 # Container do CONTEÚDO (pode estar dentro de iframes; o extrator procura em todos). Vazio = o de mais texto.
 # content_container = "div.lesson-body"

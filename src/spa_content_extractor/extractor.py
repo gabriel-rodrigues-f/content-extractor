@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -18,7 +19,9 @@ from playwright.async_api import Page
 from .browser import open_browser, polite_pause, wait_until_stable
 from .config import Config
 from .content import ContentLocation, content_text, locate_content, serialize, strip_noise, to_markdown
+from .entry import run_start_actions
 from .navigation import NavItem, NavMap, locate_item, map_navigation, reopen_groups
+from .robots import ensure_allowed
 
 log = logging.getLogger(__name__)
 
@@ -57,11 +60,19 @@ async def _open(page: Page, url: str) -> None:
         pass
 
 
-async def discover(config: Config, url: str, *, headed: bool) -> list[NavItem]:
+async def _pause(headed: bool, pause: bool) -> None:
+    if headed and pause:
+        await asyncio.to_thread(input, "\nNavegador aberto para inspeção. Pressione Enter para fechar…")
+
+
+async def discover(config: Config, url: str, *, headed: bool, pause: bool = False) -> list[NavItem]:
     """`spa-extract map`: só o mapa, para revisar antes de extrair (e ajustar seletores se precisar)."""
-    async with open_browser(config, url, headed=headed) as (_, page):
+    ensure_allowed(url, config)
+    async with open_browser(config, url, headed=headed) as (context, page):
         await _open(page, url)
+        page = await run_start_actions(context, page, config, config.start_click)
         nav = await map_navigation(page, config)
+        await _pause(headed, pause)
         return nav.items if nav else []
 
 
@@ -112,20 +123,29 @@ async def _extract_item(
 
 
 async def extract(
-    config: Config, url: str, *, headed: bool, only: str | None = None, limit: int | None = None
+    config: Config,
+    url: str,
+    *,
+    headed: bool,
+    only: str | None = None,
+    limit: int | None = None,
+    pause: bool = False,
 ) -> RunReport:
     """`spa-extract extract`: um .md por item do menu em output/<host>/<data>/raw, com manifesto e log."""
     out = run_dir(config, url)
     report = RunReport(url=url, started_at=datetime.now(UTC).isoformat(timespec="seconds"), output=str(out))
-    async with open_browser(config, url, headed=headed) as (_, page):
+    ensure_allowed(url, config)
+    async with open_browser(config, url, headed=headed) as (context, page):
         await _open(page, url)
+        page = await run_start_actions(context, page, config, config.start_click)
         nav = await map_navigation(page, config)
         if nav is None:
             raise RuntimeError("nenhum menu encontrado — ajuste selectors.nav_container no extractor.toml")
         items = [
             i
             for i in nav.items
-            if not i.is_group and (not only or re.search(only, f"{i.group or ''} {i.title}", re.IGNORECASE))
+            if (config.selectors.include_groups or not i.is_group)
+            and (not only or re.search(only, f"{i.group or ''} {i.title}", re.IGNORECASE))
         ]
         if limit:
             items = items[:limit]
@@ -153,4 +173,5 @@ async def extract(
             report.items.append(entry)
             report.save(out / "manifest.json")
             await polite_pause((config.timing.min_delay_s, config.timing.max_delay_s))
+        await _pause(headed, pause)
     return report
