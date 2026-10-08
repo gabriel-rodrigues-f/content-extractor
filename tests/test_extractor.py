@@ -2,6 +2,7 @@
 renderização progressiva com spinner, shadow DOM e ruído de interface."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,7 @@ from spa_content_extractor.extractor import discover, extract, slugify
 
 
 def md_files(report) -> list[str]:
-    raw = Path(report.output) / "raw"
+    raw = Path(report.output)
     return sorted(p.relative_to(raw).as_posix() for p in raw.rglob("*.md"))
 
 
@@ -51,7 +52,7 @@ async def test_extrai_cada_licao_do_iframe_aninhado_sem_ruido(spa_url, tmp_path)
         "02-modulo-2-simulacao/01-licao-2-1-monte-carlo.md",
     ]
 
-    bpm = (out / "raw" / files[0]).read_text(encoding="utf-8")
+    bpm = (out / files[0]).read_text(encoding="utf-8")
     assert 'module: "Módulo 1 — Fundamentos"' in bpm
     assert "# O que é BPM" in bpm
     assert "- Monitorar" in bpm  # a última parte da lista chegou depois: esperou estabilizar
@@ -59,22 +60,22 @@ async def test_extrai_cada_licao_do_iframe_aninhado_sem_ruido(spa_url, tmp_path)
     for noise in ("Próximo", "Anterior", "Marcar como concluído", "Selecione uma lição", "© 2026", "Imprimir"):
         assert noise not in bpm
 
-    bpmn = (out / "raw" / files[1]).read_text(encoding="utf-8")
+    bpmn = (out / files[1]).read_text(encoding="utf-8")
     assert "| Gateway exclusivo | Decisão |" in bpmn  # tabela
     assert "```xml" in bpmn and '<bpmn:task id="Task_1" />' in bpmn  # código com linguagem
     assert "<!-- Imagem presente aqui: sem descrição -->" in bpmn  # imagem sem alt
 
-    gateways = (out / "raw" / files[2]).read_text(encoding="utf-8")
+    gateways = (out / files[2]).read_text(encoding="utf-8")
     assert 'module: "Módulo 1 — Fundamentos › Unidade 1.B — Avançado"' in gateways
     assert "paralelo que junta" in gateways
 
-    monte = (out / "raw" / files[3]).read_text(encoding="utf-8")
+    monte = (out / files[3]).read_text(encoding="utf-8")
     assert "### Réplicas" in monte
     assert "use a mesma seed para comparar cenários" in monte  # texto dentro de shadow DOM
     assert "O que é BPM" not in monte  # não ficou o conteúdo da lição anterior
 
     manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
-    assert [i["file"] for i in manifest["items"]] == [f"raw/{f}" for f in files]
+    assert [i["file"] for i in manifest["items"]] == files
 
 
 async def test_filtra_por_regex(spa_url, tmp_path):
@@ -146,7 +147,7 @@ async def test_sanfona_extrai_todas_as_licoes_na_ordem_do_curso(spa_url, tmp_pat
         "Módulo 3 — Simulação › Resumo",
     ]
     assert all(i["status"] == "ok" for i in report.items)
-    raw = Path(report.output) / "raw"
+    raw = Path(report.output)
     first = (raw / "01-modulo-1-introducao" / "01-licao-1-1-visao-geral.md").read_text(encoding="utf-8")
     assert "# Visão geral" in first  # a primeira lição extraída é a 1.1, não a 3.2 que o player abriu
     # "Resumo" repetido: cada um na pasta do próprio módulo, com o conteúdo dele
@@ -214,7 +215,7 @@ async def test_sanfona_sem_lista_grava_uma_pasta_por_modulo(spa_url, tmp_path):
         "02-modulo-2-desenho/02-unidade-2-a-padroes/01-topico-2-a-1-gateways.md",
         "03-modulo-3-entrega/01-topico-3-1-publicacao.md",
     ]
-    raw = Path(report.output) / "raw"
+    raw = Path(report.output)
     mapeamento = (raw / "01-modulo-1-descoberta" / "02-topico-1-2-mapeamento.md").read_text(encoding="utf-8")
     assert "O AS-IS registra" in mapeamento and "O TO-BE propõe" in mapeamento
 
@@ -243,7 +244,7 @@ async def test_modulo_que_revela_aulas_ao_ser_clicado_vira_pasta(spa_url, tmp_pa
         "01-modulo-1-base/02-aula-1-2-papeis.md",
         "02-modulo-2-pratica/01-aula-2-1-exercicio.md",
     ]
-    aula = (Path(report.output) / "raw" / "01-modulo-1-base" / "02-aula-1-2-papeis.md").read_text(encoding="utf-8")
+    aula = (Path(report.output) / "01-modulo-1-base" / "02-aula-1-2-papeis.md").read_text(encoding="utf-8")
     assert "Papéis e responsabilidades" in aula
     manifest = json.loads((Path(report.output) / "manifest.json").read_text(encoding="utf-8"))
     assert len(manifest["items"]) == 3
@@ -260,7 +261,7 @@ async def test_include_groups_guarda_a_pagina_do_modulo_dentro_da_pasta(spa_url,
         "02-modulo-2-pratica/00-modulo-2-pratica.md",
         "02-modulo-2-pratica/01-aula-2-1-exercicio.md",
     ]
-    overview = (Path(report.output) / "raw" / "01-modulo-1-base" / "00-modulo-1-base.md").read_text(encoding="utf-8")
+    overview = (Path(report.output) / "01-modulo-1-base" / "00-modulo-1-base.md").read_text(encoding="utf-8")
     assert "Visão geral do Módulo 1" in overview
 
 
@@ -301,7 +302,7 @@ async def test_modulos_em_details_viram_pastas_com_as_licoes(spa_url, tmp_path):
         "02-modulo-2-publicacao/01-trabalhando-com-feedback.md",
         "02-modulo-2-publicacao/02-quiz.md",
     ]
-    raw = Path(report.output) / "raw"
+    raw = Path(report.output)
     first = (raw / "01-modulo-1-fundamentos" / "01-primeiros-passos.md").read_text(encoding="utf-8")
     assert "# Primeiros passos" in first and "Comece pelo mapa" in first
     # o menu mora dentro do <main>, ao lado da lição: nada dele, do banner nem do "foi útil? / próxima lição" entra
@@ -309,3 +310,26 @@ async def test_modulos_em_details_viram_pastas_com_as_licoes(spa_url, tmp_path):
         assert noise not in first
     assert "fundamentos" in (raw / "01-modulo-1-fundamentos" / "03-quiz.md").read_text(encoding="utf-8")
     assert "publicação" in (raw / "02-modulo-2-publicacao" / "02-quiz.md").read_text(encoding="utf-8")
+
+
+async def test_cada_curso_ganha_uma_pasta_numerada_direto_em_output(spa_url, tmp_path):
+    """output/00-<curso>/<data-hora>/…, output/01-<curso>/…: sem host e sem raw/. Repetir um curso reaproveita a pasta
+    dele e cria outra extração com a data."""
+    config = fast_config(tmp_path)
+    first = await extract(config, spa_url.replace("index.html", "lazy.html"), headed=False, limit=1)
+    await extract(config, spa_url.replace("index.html", "outline.html"), headed=False, limit=1)
+    again = await extract(config, spa_url.replace("index.html", "lazy.html"), headed=False, limit=1)
+    config.course_name = "Meu curso"
+    await extract(config, spa_url.replace("index.html", "details.html"), headed=False, limit=1)
+
+    assert sorted(p.name for p in config.output_dir.iterdir()) == [
+        "00-player-com-aulas-sob-demanda",  # título da página de entrada
+        "01-player-com-sanfona-sem-lista",
+        "02-meu-curso",  # --name
+    ]
+    course = config.output_dir / "00-player-com-aulas-sob-demanda"
+    assert Path(first.output).parent == Path(again.output).parent == course
+    assert re.fullmatch(r"\d{8}-\d{6}", Path(first.output).name)
+    assert Path(first.output) != Path(again.output)  # duas extrações, duas pastas de data
+    assert (Path(first.output) / "manifest.json").exists()
+    assert (Path(first.output) / "01-modulo-1-base" / "01-aula-1-1-conceitos.md").exists()

@@ -10,8 +10,9 @@ __pycache__/
 .env*
 !.env.example
 
-# Conteúdo extraído (pode ser material licenciado do alvo): fica local
+# Conteúdo extraído e formatado (pode ser material licenciado do alvo): fica local
 output/
+knowledge/
 
 # Configuração do alvo (seletores e URL específicos): copie de extractor.example.toml
 extractor.toml

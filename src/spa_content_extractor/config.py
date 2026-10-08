@@ -142,7 +142,11 @@ class Config:
     # O extrator respeita o robots.txt. Site seu ou com permissão por escrito que bloqueia robôs: cadastre o host com a
     # autorização (fica registrada no log de cada execução). Ex.: {"treinamento.minhaempresa.com" = "site próprio"}
     authorized_hosts: dict[str, str] = field(default_factory=dict)
+    # Cada curso vira output/NN-<curso>/ (NN crescente); a formatação com IA grava em knowledge/NN-<curso>/.
     output_dir: Path = Path("output")
+    knowledge_dir: Path = Path("knowledge")
+    # Nome da pasta do curso. Vazio = título da página de entrada. Equivale a --name.
+    course_name: str = ""
     auth_dir: Path = Path(".auth")
     # "chromium" (o do Playwright) ou "chrome" (o Google Chrome instalado).
     browser_channel: str = "chromium"

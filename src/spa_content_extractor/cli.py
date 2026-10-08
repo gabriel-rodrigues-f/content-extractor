@@ -48,10 +48,13 @@ def _parser() -> argparse.ArgumentParser:
     ext.add_argument("--headed", action="store_true", help="mostra o navegador")
     ext.add_argument("--only", help="regex no título dos itens a extrair")
     ext.add_argument("--limit", type=int, help="no máximo N itens (teste)")
+    ext.add_argument("--name", help="nome da pasta do curso (padrão: título da página de entrada)")
     _common(ext)
 
     fmt = sub.add_parser("format", help="formata os .md brutos de uma execução com Claude no SAP AI Core")
-    fmt.add_argument("run", type=Path, help="pasta da execução (output/<host>/<data>)")
+    fmt.add_argument(
+        "run", type=Path, help="pasta do curso (output/NN-<curso>: a extração mais recente) ou de uma extração"
+    )
     fmt.add_argument("--only", help="regex no caminho dos arquivos (pasta/arquivo)")
     return parser
 
@@ -79,6 +82,8 @@ def _run(argv: list[str] | None) -> int:
         config.selectors.include_groups = True
     if getattr(args, "wait_for", None):
         config.start_wait_for = args.wait_for
+    if getattr(args, "name", None):
+        config.course_name = args.name
 
     if args.command == "login":
         from .auth import login
@@ -111,7 +116,7 @@ def _run(argv: list[str] | None) -> int:
     if args.command == "format":
         from .formatter import format_run
 
-        results = format_run(args.run, Path.cwd(), only=args.only)
+        results = format_run(args.run, Path.cwd(), only=args.only, knowledge_dir=config.knowledge_dir)
         print(json.dumps(results, ensure_ascii=False, indent=2))
         return 0 if all(isinstance(r, int) for _, r in results) else 2
     return 1

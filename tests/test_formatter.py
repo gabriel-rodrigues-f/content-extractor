@@ -52,7 +52,7 @@ def test_sem_chave_explica_o_que_fazer(tmp_path, monkeypatch):
         raise AssertionError("deveria exigir a service key")
 
 
-def test_formatacao_repete_as_pastas_do_raw(tmp_path, monkeypatch):
+def test_formatacao_repete_as_pastas_do_curso(tmp_path, monkeypatch):
     class FakeFormatter:
         def __init__(self, project_root):
             pass
@@ -62,11 +62,15 @@ def test_formatacao_repete_as_pastas_do_raw(tmp_path, monkeypatch):
             return 1
 
     monkeypatch.setattr(formatter, "Formatter", FakeFormatter)
-    run = tmp_path / "run"
-    (run / "raw" / "01-modulo" / "02-unidade").mkdir(parents=True)
-    (run / "raw" / "01-modulo" / "01-licao.md").write_text("um", encoding="utf-8")
-    (run / "raw" / "01-modulo" / "02-unidade" / "01-licao.md").write_text("dois", encoding="utf-8")
+    course = tmp_path / "output" / "00-curso"
+    for run, text in (("20261008-150524", "antigo"), ("20261009-090000", "dois")):
+        (course / run / "01-modulo" / "02-unidade").mkdir(parents=True)
+        (course / run / "manifest.json").write_text("{}", encoding="utf-8")
+        (course / run / "01-modulo" / "01-licao.md").write_text("um", encoding="utf-8")
+        (course / run / "01-modulo" / "02-unidade" / "01-licao.md").write_text(text, encoding="utf-8")
 
-    results = formatter.format_run(run, tmp_path, only="unidade")
+    # a pasta do curso formata a extração mais recente, no mesmo caminho dentro de knowledge/
+    results = formatter.format_run(course, tmp_path, only="unidade", knowledge_dir=tmp_path / "knowledge")
     assert results == [("01-modulo/02-unidade/01-licao.md", 1)]
-    assert (run / "knowledge" / "01-modulo" / "02-unidade" / "01-licao.md").read_text(encoding="utf-8") == "DOIS"
+    target = tmp_path / "knowledge" / "00-curso" / "20261009-090000" / "01-modulo" / "02-unidade" / "01-licao.md"
+    assert target.read_text(encoding="utf-8") == "DOIS"

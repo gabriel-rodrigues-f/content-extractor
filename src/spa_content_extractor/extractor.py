@@ -34,7 +34,7 @@ def slugify(text: str, limit: int = 70) -> str:
 
 
 def item_file(item: NavItem) -> PurePosixPath:
-    """Arquivo do item dentro de raw/: cada grupo do menu vira uma pasta e cada tópico um .md dentro dela, numerados
+    """Arquivo do item dentro da pasta do curso: cada grupo do menu vira uma pasta e cada tópico um .md dentro dela, numerados
     pela posição no menu (a ordem do curso aparece em qualquer explorador de arquivos). A página do próprio grupo
     (--include-groups) fica como `00-<grupo>.md` dentro da pasta dele."""
     parts = [f"{number:02d}-{slugify(title, 60)}" for number, title in zip(item.position, item.path, strict=True)]
@@ -54,13 +54,43 @@ class RunReport:
         path.write_text(json.dumps(self.__dict__, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def run_dir(config: Config, url: str) -> Path:
-    host = urlparse(url).netloc.replace(":", "_") or "local"
-    path = (
-        config.output_dir / host / datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
-    )  # hora local no nome da pasta
-    (path / "raw").mkdir(parents=True, exist_ok=True)
+def course_dir(config: Config, url: str, name: str) -> Path:
+    """Pasta do curso direto em output/: `NN-<curso>`, com NN crescente na ordem em que os cursos são baixados
+    (00, 01, 02…). O mesmo curso (mesma URL, pelo manifest.json de uma extração anterior) volta para a pasta que já
+    tem, com o mesmo número — mesmo que alguém a tenha renomeado."""
+    root = config.output_dir
+    root.mkdir(parents=True, exist_ok=True)
+    numbers: list[int] = []
+    for folder in sorted(root.iterdir()):
+        match = re.match(r"(\d+)-", folder.name)
+        if not folder.is_dir() or not match:
+            continue
+        numbers.append(int(match.group(1)))
+        for manifest_file in sorted(folder.glob("*/manifest.json")):
+            try:
+                manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if str(manifest.get("url", "")).rstrip("/") == url.rstrip("/"):
+                return folder
+    path = root / f"{(max(numbers) + 1 if numbers else 0):02d}-{slugify(name, 80)}"
+    path.mkdir()
     return path
+
+
+async def course_name(page: Page, url: str) -> str:
+    """Nome do curso pela página de entrada: o título da aba (sem o " | site"), o <h1> ou o fim da URL."""
+    try:
+        title, heading = await page.evaluate(
+            "() => [document.title || '', (document.querySelector('h1') || {}).innerText || '']"
+        )
+    except PlaywrightError:
+        title, heading = "", ""
+    for candidate in (str(title).split(" | ")[0], str(heading)):
+        if candidate.strip():
+            return candidate.strip()
+    parsed = urlparse(url)
+    return parsed.path.rstrip("/").rsplit("/", 1)[-1] or parsed.hostname or "curso"
 
 
 async def _open(page: Page, url: str) -> None:
@@ -161,12 +191,17 @@ async def extract(
     limit: int | None = None,
     pause: bool = False,
 ) -> RunReport:
-    """`spa-extract extract`: um .md por tópico em output/<host>/<data>/raw/<módulo>/<unidade>/…, com manifesto."""
-    out = run_dir(config, url)
-    report = RunReport(url=url, started_at=datetime.now(UTC).isoformat(timespec="seconds"), output=str(out))
+    """`spa-extract extract`: um .md por tópico em output/NN-<curso>/<data-hora>/<módulo>/<unidade>/…, com
+    manifest.json — cada extração numa pasta com a data, dentro do curso."""
     ensure_allowed(url, config)
     async with open_browser(config, url, headed=headed) as (context, page):
         await _open(page, url)
+        # o nome vem da página de entrada, antes do "Resume Learning" (no player, o título já é o da lição)
+        course = course_dir(config, url, config.course_name or await course_name(page, url))
+        out = course / datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")  # hora local
+        out.mkdir(exist_ok=True)
+        log.info("extração em %s", out)
+        report = RunReport(url=url, started_at=datetime.now(UTC).isoformat(timespec="seconds"), output=str(out))
         page = await run_start_actions(context, page, config, config.start_click)
         walker = MenuWalker(page, config)
         state: dict[str, object] = {"previous_hash": None}
@@ -190,10 +225,10 @@ async def extract(
                     )
                     state["previous_hash"] = digest
                     relative = item_file(item)
-                    target = out / "raw" / relative
+                    target = out / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_text(_front_matter(item, url, location) + markdown, encoding="utf-8")
-                    entry.update(status="ok", file=f"raw/{relative}", chars=len(markdown), attempts=attempt)
+                    entry.update(status="ok", file=str(relative), chars=len(markdown), attempts=attempt)
                     log.info("✓ %03d %s (%s caracteres)", item.index, path_text, len(markdown))
                     break
                 except (PlaywrightError, LookupError, TimeoutError, ValueError) as error:
@@ -215,9 +250,9 @@ async def extract(
             old = out / entry["file"] if entry.get("file") else None
             if config.selectors.include_groups and old and old.exists():
                 relative = item_file(item)  # agora é grupo: <pasta>/00-<grupo>.md
-                (out / "raw" / relative).parent.mkdir(parents=True, exist_ok=True)
-                old.replace(out / "raw" / relative)
-                entry["file"] = f"raw/{relative}"
+                (out / relative).parent.mkdir(parents=True, exist_ok=True)
+                old.replace(out / relative)
+                entry["file"] = str(relative)
             else:
                 if old:
                     old.unlink(missing_ok=True)

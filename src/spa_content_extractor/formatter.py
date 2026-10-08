@@ -116,11 +116,21 @@ class Formatter:
         return len(formatted)
 
 
-def format_run(run_path: Path, project_root: Path, only: str | None = None) -> list[tuple[str, int | str]]:
-    """raw/<módulo>/<tópico>.md → knowledge/<módulo>/<tópico>.md (mesmas pastas). `only` filtra pelo caminho."""
+_RUN = re.compile(r"\d{8}-\d{6}")
+
+
+def format_run(
+    run: Path, project_root: Path, only: str | None = None, knowledge_dir: Path | None = None
+) -> list[tuple[str, int | str]]:
+    """output/NN-<curso>/<data>/<módulo>/<tópico>.md → knowledge/NN-<curso>/<data>/<módulo>/<tópico>.md (mesmas
+    pastas). Recebe a pasta de uma extração ou a do curso (usa a extração mais recente). `only` filtra pelo caminho."""
+    extractions = sorted(d for d in run.iterdir() if d.is_dir() and _RUN.fullmatch(d.name)) if run.is_dir() else []
+    if extractions:
+        run = extractions[-1]
+        log.info("formatando a extração mais recente: %s", run)
     formatter = Formatter(project_root)
-    raw = run_path / "raw"
-    out = run_path / "knowledge"
+    raw = run
+    out = (knowledge_dir or project_root / "knowledge") / run.parent.name / run.name
     results: list[tuple[str, int | str]] = []
     for source in sorted(raw.rglob("*.md")):
         name = source.relative_to(raw).as_posix()
