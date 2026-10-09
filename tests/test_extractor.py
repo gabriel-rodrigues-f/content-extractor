@@ -360,3 +360,20 @@ async def test_sessao_expirada_para_com_mensagem_e_sem_pasta(spa_url, tmp_path):
     with pytest.raises(RuntimeError, match="sessão expirou"):
         await extract(config, spa_url.replace("index.html", "redirect-login.html"), headed=False)
     assert not config.output_dir.exists() or not any(config.output_dir.iterdir())
+
+
+async def test_licao_em_player_de_slides_junta_o_texto_de_cada_slide(spa_url, tmp_path):
+    """Lição em player de slides (Articulate Storyline, story.html num iframe): o texto só existe na camada de
+    acessibilidade do slide aberto. O extrator avança pelo "next" e grava uma seção por slide, sem o menu do player."""
+    report = await extract(fast_config(tmp_path), spa_url.replace("index.html", "storyline-course.html"), headed=False)
+    assert [(i["title"], i["status"]) for i in report.items] == [
+        ("Lição 1 — Conceitos", "ok"),
+        ("Lição 2 — GDPR em slides", "ok"),
+    ]
+    slides = (Path(report.output) / "01-modulo-1-privacidade" / "02-licao-2-gdpr-em-slides.md").read_text(
+        encoding="utf-8"
+    )
+    for section in ("## Abertura", "## O que é", "## Consentimento"):
+        assert section in slides
+    assert "em vigor desde maio de 2018" in slides and "específico para cada uso" in slides
+    assert "Back to top" not in slides and "Menu" not in slides

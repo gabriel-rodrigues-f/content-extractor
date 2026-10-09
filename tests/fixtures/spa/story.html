@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>Story</title>
+<style>
+  body { font-family: sans-serif; }
+  .acc { position: absolute; opacity: 0; width: 1px; height: 1px; overflow: hidden; }
+  .cs-disabled { opacity: .4; }
+</style></head>
+<body class="cs-HTML">
+<!-- Como no Articulate Storyline: o texto do slide só existe na camada de acessibilidade (invisível) enquanto o slide
+     está na tela; o menu lateral e os controles aparecem em todos os slides. -->
+<div id="sidebar" class="acc"><div>Menu</div><div>Abertura</div><div>O que é</div><div>Consentimento</div></div>
+<button id="skipnav" class="acc">Back to top</button>
+<div id="slide"></div>
+<button id="prev" class="cs-button btn cs-disabled" aria-label="previous" aria-disabled="true">‹</button>
+<button id="next" class="cs-button btn" aria-label="next">›</button>
+<script>
+  const SLIDES = [
+    ['Abertura', 'O que é o GDPR?'],
+    ['O que é', 'Regulamento europeu de proteção de dados em vigor desde maio de 2018.'],
+    ['Consentimento', 'O consentimento precisa ser específico para cada uso dos dados.'],
+  ]
+  let i = 0
+  const slide = document.getElementById('slide')
+  const next = document.getElementById('next')
+  const prev = document.getElementById('prev')
+  function render() {
+    slide.innerHTML = ''
+    setTimeout(() => {
+      slide.innerHTML = '<div class="acc">slide: ' + SLIDES[i][0] + '</div><div class="acc">' + SLIDES[i][1] + '</div>'
+    }, 200)
+    const last = i === SLIDES.length - 1
+    next.classList.toggle('cs-disabled', last)
+    next.setAttribute('aria-disabled', String(last))
+    prev.classList.toggle('cs-disabled', i === 0)
+  }
+  next.addEventListener('click', () => { if (i < SLIDES.length - 1) { i++; render() } })
+  render()
+</script>
+</body></html>

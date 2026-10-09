@@ -23,6 +23,7 @@ from .content import ContentLocation, content_text, locate_content, serialize, s
 from .entry import run_start_actions
 from .navigation import MenuWalker, NavItem
 from .robots import ensure_allowed
+from .slides import is_slide_player, slides_markdown
 
 log = logging.getLogger(__name__)
 
@@ -223,7 +224,11 @@ async def _extract_item(
     stable_hash = await wait_until_stable(page, config, baseline, current_text)
     if location is None:
         raise LookupError("container de conteúdo não encontrado")
-    markdown = to_markdown(strip_noise(await serialize(location), config))
+    if await is_slide_player(location.frame):
+        # player de slides (Storyline): o texto só existe slide a slide — avança pelo "next" e junta
+        markdown = await slides_markdown(location.frame)
+    else:
+        markdown = to_markdown(strip_noise(await serialize(location), config))
     if not markdown.strip():
         raise ValueError("conteúdo vazio depois da limpeza")
     return markdown, stable_hash, location
