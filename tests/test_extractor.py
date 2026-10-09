@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from spa_content_extractor.config import Config, Timing
-from spa_content_extractor.extractor import discover, extract, slugify
+from spa_content_extractor.extractor import discover, extract, pick_title, slugify
 
 
 def md_files(report) -> list[str]:
@@ -81,6 +81,13 @@ async def test_extrai_cada_licao_do_iframe_aninhado_sem_ruido(spa_url, tmp_path)
 async def test_filtra_por_regex(spa_url, tmp_path):
     report = await extract(fast_config(tmp_path), spa_url, headed=False, only="monte carlo")
     assert [i["title"] for i in report.items] == ["Lição 2.1 — Monte Carlo"]
+
+
+def test_titulo_do_curso_usa_o_h1_quando_a_aba_vem_cortada():
+    h1 = "Carrying Out the Basic Configuration of SAP S/4HANA Project System"
+    assert pick_title("Carrying Out the Basic Configuration of SAP S/4HANA Project Syste", h1) == h1
+    assert pick_title("Curso X | SAP Learning", "Lição 3") == "Curso X"  # h1 de outra coisa: fica a aba
+    assert pick_title("", "Curso Y") == "Curso Y"
 
 
 def test_slug():

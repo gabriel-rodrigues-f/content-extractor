@@ -96,17 +96,28 @@ def course_dir(config: Config, url: str, name: str) -> Path:
     return _numbered(root, name, url)
 
 
+def pick_title(tab_title: str, heading: str) -> str:
+    """O título da aba (sem o " | site"), a menos que ele seja o começo cortado do <h1> — sites cortam o <title> em
+    ~65 caracteres ("…Project Syste") e o <h1> traz o nome inteiro."""
+    title = tab_title.split(" | ")[0].strip()
+    heading = " ".join(heading.split())
+    stem = title.rstrip("…. ").lower()
+    if heading and (not title or (len(heading) > len(title) and heading.lower().startswith(stem))):
+        return heading
+    return title
+
+
 async def course_name(page: Page, url: str) -> str:
-    """Nome do curso pela página de entrada: o título da aba (sem o " | site"), o <h1> ou o fim da URL."""
+    """Nome do curso pela página de entrada: o título da aba (ou o <h1>, se a aba vier cortada) ou o fim da URL."""
     try:
         title, heading = await page.evaluate(
             "() => [document.title || '', (document.querySelector('h1') || {}).innerText || '']"
         )
     except PlaywrightError:
         title, heading = "", ""
-    for candidate in (str(title).split(" | ")[0], str(heading)):
-        if candidate.strip():
-            return candidate.strip()
+    name = pick_title(str(title), str(heading))
+    if name:
+        return name
     parsed = urlparse(url)
     return parsed.path.rstrip("/").rsplit("/", 1)[-1] or parsed.hostname or "curso"
 
