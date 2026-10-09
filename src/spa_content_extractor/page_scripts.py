@@ -176,8 +176,9 @@ DISCOVER_NAV = (
   const scored = []
   for (const c of containers) {
     if (!visible(c)) continue
-    // links do rodapé costumam ser desenhados antes do menu do curso: nunca são o menu (a não ser fixados na config)
-    if (!fixedContainer && c.closest('footer, [role=contentinfo]')) continue
+    // rodapé e breadcrumb costumam ser desenhados antes do menu do curso: nunca são o menu (a não ser fixados)
+    if (!fixedContainer && c.closest('footer, [role=contentinfo], [aria-label*=breadcrumb i], [class*=breadcrumb i]'))
+      continue
     const items = itemsIn(c)
     if (items.length < 2) continue
     // itens curtos e numerosos parecem menu; muito texto corrido parece conteúdo
