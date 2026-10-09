@@ -351,3 +351,12 @@ async def test_start_ou_resume_e_url_que_ja_abre_no_conteudo(spa_url, tmp_path):
     report = await extract(config, spa_url.replace("index.html", "accordion.html"), headed=False, limit=1)
     assert [i["path"] for i in report.items] == ["Módulo 1 — Introdução › Lição 1.1 — Visão geral"]
     assert Path(report.output).parent == config.output_dir / "00-signavio" / "00-player-sanfona"
+
+
+async def test_sessao_expirada_para_com_mensagem_e_sem_pasta(spa_url, tmp_path):
+    """A URL do curso redireciona para o login (SSO) em outro domínio: para com a instrução de login, sem procurar menu
+    e sem criar pasta."""
+    config = fast_config(tmp_path)
+    with pytest.raises(RuntimeError, match="sessão expirou"):
+        await extract(config, spa_url.replace("index.html", "redirect-login.html"), headed=False)
+    assert not config.output_dir.exists() or not any(config.output_dir.iterdir())

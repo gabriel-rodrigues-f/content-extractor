@@ -126,12 +126,29 @@ async def parent_name(page: Page, url: str) -> str | None:
     return segments[-2].replace("-", " ") if len(segments) >= 2 else None
 
 
+class SessionExpiredError(RuntimeError):
+    """A URL caiu numa página de login/SSO de outro domínio: a sessão salva expirou ou não existe."""
+
+
+_LOGIN_HINT = re.compile(r"login|signin|sign-in|sso|saml|oauth|auth|idp|accounts", re.IGNORECASE)
+
+
+def _check_session(page: Page, url: str) -> None:
+    landed = urlparse(page.url)
+    if landed.hostname != urlparse(url).hostname and _LOGIN_HINT.search(f"{landed.hostname}{landed.path}"):
+        raise SessionExpiredError(
+            f"a sessão expirou: a página foi redirecionada para o login ({landed.hostname}). Rode "
+            f"`uv run spa-extract login {url}`, entre na janela e tente de novo."
+        )
+
+
 async def _open(page: Page, url: str) -> None:
     await page.goto(url, wait_until="domcontentloaded")
     try:
         await page.wait_for_load_state("networkidle", timeout=10_000)
     except PlaywrightError:
         pass
+    _check_session(page, url)
 
 
 async def _pause(headed: bool, pause: bool) -> None:
@@ -146,6 +163,7 @@ async def discover(config: Config, url: str, *, headed: bool, pause: bool = Fals
     async with open_browser(config, url, headed=headed) as (context, page):
         await _open(page, url)
         page, _ = await run_start_actions(context, page, config, config.start_click)
+        _check_session(page, url)
         walker = MenuWalker(page, config)
         items: list[NavItem] = []
 
@@ -232,6 +250,7 @@ async def extract(
         # o nome vem da página de entrada, antes do "Resume Learning" (no player, o título já é o da lição)
         name = config.course_name or await course_name(page, url)
         page, clicked = await run_start_actions(context, page, config, config.start_click)
+        _check_session(page, url)
         if config.start_click and not clicked and not config.course_name:
             # a URL já abriu numa lição: o curso está no caminho de navegação
             name = await parent_name(page, url) or name
@@ -304,5 +323,11 @@ async def extract(
             )
         except _LimitReached:
             log.info("limite de %s item(ns) atingido", limit)
+        except RuntimeError:
+            # sem menu: não deixa pasta vazia do curso para trás
+            for empty in (out, course):
+                if empty.exists() and not any(empty.iterdir()):
+                    empty.rmdir()
+            raise
         await _pause(headed, pause)
     return report

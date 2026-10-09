@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Curso protegido</title></head>
+<body>
+<script>
+  // sessão expirada: o site manda para o provedor de identidade, em outro domínio
+  location.replace('http://localhost:' + location.port + '/saml2/idp/sso.html')
+</script>
+</body></html>

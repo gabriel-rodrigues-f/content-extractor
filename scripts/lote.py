@@ -21,6 +21,12 @@ from spa_content_extractor.config import load_config
 from spa_content_extractor.extractor import _numbered
 
 DONE = " — concluído"
+
+
+class SessionExpired(Exception):
+    pass
+
+
 ITEM = re.compile(r"^- \[( |x|!)\] (\S+)")
 RESULT = re.compile(r"(\d+)/(\d+) item\(ns\) extraído\(s\) em (.+)$")
 
@@ -73,6 +79,8 @@ def extract(output: Path, url: str, group: str) -> tuple[bool, str]:
         folder = Path(path.strip()).relative_to(output) if path.strip().startswith(str(output)) else path.strip()
         return code == 0, f"{ok}/{total} lições · {folder}"
     reason = re.search(r"Não foi possível continuar: (.+)", text)
+    if reason and "sessão expirou" in reason.group(1):
+        raise SessionExpired(reason.group(1))
     return False, (reason.group(1) if reason else f"saída {code}, veja {log.relative_to(output)}")[:200]
 
 
@@ -115,7 +123,12 @@ def main() -> int:
         elif source is not None:
             ok, note = True, f"já extraído · {source.relative_to(output)}"
         else:
-            ok, note = extract(output, url, group)
+            try:
+                ok, note = extract(output, url, group)
+            except SessionExpired as error:
+                # todo o resto falharia igual: para o lote sem marcar nada; depois do login, rodar de novo retoma daqui
+                print(f"■ lote parado: {error}", flush=True)
+                return 4
         lines[index] = f"- [{'x' if ok else '!'}] {url} — {note}"
         save()
         print(f"{'✓' if ok else '✗'} {group} · {url.rsplit('/', 1)[-1]} · {note}", flush=True)
