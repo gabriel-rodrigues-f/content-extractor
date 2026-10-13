@@ -101,17 +101,22 @@ class Deliverable:
 
 
 def load_deliverable(client: HelpPortalClient, doc: HelpDoc) -> Deliverable:
-    meta = client.get(
-        "/http.svc/deliverableMetadata",
-        {
-            "product_url": doc.product,
-            "deliverable_url": doc.deliverable,
-            "topic_url": doc.topic,
-            "version": doc.version,
-            "loadlandingpageontopicnotfound": "true",
-            "locale": doc.locale,
-        },
-    )
+    params = {
+        "product_url": doc.product,
+        "deliverable_url": doc.deliverable,
+        "version": doc.version,
+        "loadlandingpageontopicnotfound": "true",
+        "locale": doc.locale,
+    }
+    if doc.topic:
+        # topic_url vazio faz o portal responder só um redirect; sem o parâmetro, ele abre a página inicial do documento
+        params["topic_url"] = doc.topic
+    meta = client.get("/http.svc/deliverableMetadata", params)
+    if "deliverable" not in meta:
+        raise LookupError(
+            f"o Help Portal não abriu o documento (resposta: {meta.get('redirect') or list(meta)}); "
+            "confira a URL abrindo-a no navegador e copie a de um tópico (documento que pede login não é suportado)"
+        )
     deliverable = meta["deliverable"]
     page = client.get(
         "/http.svc/pagecontent",

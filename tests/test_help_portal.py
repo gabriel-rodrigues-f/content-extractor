@@ -52,6 +52,9 @@ class FakePortal:
         self.calls.append((path, dict(params)))
         if path.endswith("deliverableMetadata"):
             assert params["product_url"] == "sap-ai-core" and params["deliverable_url"] == "sap-ai-core-service-guide"
+            if params.get("topic_url") == "":
+                # como o portal real: topic_url vazio não abre o documento, só devolve um redirect
+                return {"redirect": "/docs/AI_CORE/2d6c5984063c40a59eda62f4a9135bee?version=CLOUD"}
             return {
                 "deliverable": {"id": 24857212, "buildNo": 1759, "productName": "SAP AI Core"},
                 "filePath": "setup.html",
@@ -122,6 +125,15 @@ def test_percorre_o_sumario_em_profundidade_e_grava_pastas(tmp_path):
     assert "source: https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide/initial-setup" in setup
     manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["url"].startswith("https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide?")
+
+
+def test_url_so_do_documento_sem_topico(tmp_path):
+    portal = FakePortal()
+    report = extract_help(
+        config_for(tmp_path), "https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide", client=portal
+    )
+    assert len(report.items) == 7 and all(i["status"] == "ok" for i in report.items)
+    assert "topic_url" not in portal.calls[0][1]
 
 
 def test_only_e_limit(tmp_path):
