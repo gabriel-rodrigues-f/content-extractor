@@ -61,13 +61,18 @@ def copy_into(output: Path, source: Path, group_dir: Path) -> Path:
     return target
 
 
+def command_for(url: str) -> str:
+    return "help" if "://help.sap.com/docs/" in url else "extract"
+
+
 def extract(output: Path, url: str, group: str) -> tuple[bool, str]:
     logs = output / ".logs"
     logs.mkdir(exist_ok=True)
     log = logs / f"{url.rstrip('/').rsplit('/', 1)[-1]}.log"
     with log.open("w", encoding="utf-8") as handle:
         code = subprocess.run(
-            [sys.executable, "-m", "spa_content_extractor.cli", "extract", url, "--group", group],
+            # documento do SAP Help Portal: comando próprio (sumário pela API do portal); o resto, curso
+            [sys.executable, "-m", "spa_content_extractor.cli", command_for(url), url, "--group", group],
             stdout=handle,
             stderr=subprocess.STDOUT,
             check=False,

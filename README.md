@@ -83,6 +83,26 @@ Uma aba, uma ação por vez, pausas aleatórias de 1,5 a 4 s entre itens. É par
 não há técnicas de evasão de detecção. Use só em conteúdo que você tem direito de acessar e extrair (respeitando o
 `robots.txt` e os termos de uso do site).
 
+## SAP Help Portal (`spa-extract help`)
+
+Comando próprio para os documentos do help.sap.com, separado do fluxo dos cursos:
+
+```bash
+uv run spa-extract help https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide/initial-setup --group ai-core
+```
+
+- Aceita a URL de qualquer tópico do documento (ou só `…/docs/<produto>/<documento>`); `?version=` e `?locale=` são
+  respeitados (padrão `LATEST` e `en-US`).
+- Não abre navegador nem clica no menu: lê o sumário da coluna da esquerda e o HTML de cada tópico pelas mesmas chamadas
+  JSON que a própria página usa (`/http.svc/deliverableMetadata` e `/http.svc/pagecontent`), com o mesmo ritmo
+  educado entre páginas.
+- O sumário é percorrido em profundidade, do primeiro item. Item com filhos vira pasta e a página dele fica como
+  `00-<item>.md` dentro dela (no Help Portal os grupos também têm conteúdo):
+  `output/NN-<grupo>/NN-<documento>/<data-hora>/03-initial-setup/00-initial-setup.md`, `…/01-enabling-…/01-….md`.
+- `--only REGEX` (no caminho do sumário), `--limit N`, `--name` e `--group` como no `extract`. No lote
+  (`scripts/lote.py`), URLs `help.sap.com/docs/…` usam este comando sozinhas.
+- O `robots.txt` do help.sap.com proíbe robôs: só roda com o host em `authorized_hosts` no `extractor.toml`.
+
 ## Instalação
 
 ```sh
