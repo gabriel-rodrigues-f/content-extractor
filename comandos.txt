@@ -1,0 +1,164 @@
+COMANDOS — spa-content-extractor
+================================
+
+Rode tudo na pasta do projeto:
+
+  cd ~/Documents/20-areas/21-architecture-career/21.06-repositories/12-spa-content-extraction/spa-content-extractor
+
+No zsh, URL com "?" ou "&" vai SEMPRE entre aspas (sem aspas o zsh responde "no matches found").
+Um curso ou documento baixado de novo reaproveita a pasta e o número dele e cria outra pasta de data.
+
+
+1. SAP LEARNING HUB (learning.sap.com)
+--------------------------------------
+
+1.1 Login (uma vez, ou quando aparecer "sessão expirou")
+    Abre o navegador; você entra com o seu usuário e aperta Enter no terminal.
+    A sessão fica em .auth/learning.sap.com.json.
+
+  uv run spa-extract login https://learning.sap.com
+
+1.2 Ver o menu do curso antes de extrair (não grava nada; "▸" = módulo/unidade)
+
+  uv run spa-extract map https://learning.sap.com/courses/introducing-sap-cloud-alm
+
+    Vendo o navegador, que fica aberto até o Enter (para entender um player diferente):
+
+  uv run spa-extract map https://learning.sap.com/courses/introducing-sap-cloud-alm --headed --pause
+
+1.3 Extrair um curso
+    O extractor.toml já clica em "Start learning" ou "Resume learning".
+    Sem --group, o curso vai direto para output/NN-<curso>/<data-hora>/.
+
+  uv run spa-extract extract https://learning.sap.com/courses/introducing-sap-cloud-alm
+
+    Dentro de uma pasta de grupo (trilha/certificação), em output/NN-<grupo>/NN-<curso>/:
+
+  uv run spa-extract extract https://learning.sap.com/courses/introducing-sap-cloud-alm --group "Solution Transformation Consultant with SAP CloudALM"
+
+    Teste rápido, só as 3 primeiras lições:
+
+  uv run spa-extract extract https://learning.sap.com/courses/introducing-sap-cloud-alm --limit 3
+
+    Só as lições cujo título bate com a regex (sem diferenciar maiúsculas):
+
+  uv run spa-extract extract https://learning.sap.com/courses/introducing-sap-cloud-alm --only "summary|overview"
+
+    Nome da pasta escolhido por você (padrão: título da página do curso):
+
+  uv run spa-extract extract https://learning.sap.com/courses/introducing-sap-cloud-alm --name "cloud-alm-intro"
+
+    Incluir também a página de cada módulo (vira 00-<modulo>.md dentro da pasta dele):
+
+  uv run spa-extract extract https://learning.sap.com/courses/introducing-sap-cloud-alm --include-groups
+
+    Vendo o navegador e com log detalhado (para investigar uma lição que veio vazia ou errada):
+
+  uv run spa-extract -v extract https://learning.sap.com/courses/introducing-sap-cloud-alm --headed --limit 5
+
+    Player com outro botão de entrada (substitui o start_click do extractor.toml):
+
+  uv run spa-extract extract https://learning.sap.com/courses/<curso> --start-click "Start Course|Continue"
+
+1.4 Lote de cursos (output/STATUS.md)
+    Acrescente no FIM do output/STATUS.md um grupo e as URLs, com "[ ]":
+
+      ## SAP Integration Suite
+      - [ ] https://learning.sap.com/courses/<curso-1>
+      - [ ] https://learning.sap.com/courses/<curso-2>
+
+    Ver o que está pendente (não baixa nada):
+
+  uv run python scripts/lote.py --dry
+
+    Rodar. Retoma do primeiro curso não concluído; curso que já está em outro grupo é copiado, não baixado de novo:
+
+  uv run python scripts/lote.py
+
+    Lote longo (de madrugada): impede o Mac de dormir enquanto roda:
+
+  caffeinate -i uv run python scripts/lote.py
+
+    Acompanhar um curso do lote em andamento (log em output/.logs/<slug-da-url>.log):
+
+  tail -f output/.logs/introducing-sap-cloud-alm.log
+
+    Se o lote parar com "sessão expirou": rode o login (1.1) e depois o lote de novo; ele continua de onde parou.
+
+
+2. SAP HELP PORTAL (help.sap.com)
+---------------------------------
+Não precisa de login nem de navegador. Aceita a URL do documento ou de qualquer tópico dele (sempre lê o documento
+inteiro, do primeiro item do sumário). Grupo do sumário vira pasta e a página dele vira 00-<item>.md.
+
+2.1 Documento inteiro
+
+  uv run spa-extract help https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide --group "help-ai-core"
+  uv run spa-extract help https://help.sap.com/docs/btp/sap-business-technology-platform --group "help-btp"
+  uv run spa-extract help https://help.sap.com/docs/integration-suite/sap-integration-suite --group "help-integration-suite"
+  uv run spa-extract help https://help.sap.com/docs/cloud-alm/applicationhelp --group "help-cloud-alm"
+  uv run spa-extract help https://help.sap.com/docs/leanix/ea --group "help-leanix"
+
+    O Joule tem o título "What is Joule" no portal; dê um nome melhor para a pasta:
+
+  uv run spa-extract help https://help.sap.com/docs/joule/serviceguide --group "help-joule" --name "joule-service-guide"
+
+2.2 A partir da URL de um tópico copiada do navegador (dá no mesmo que a do documento)
+
+  uv run spa-extract help "https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide/initial-setup?locale=en-US"
+
+2.3 Teste rápido: só as 5 primeiras páginas
+
+  uv run spa-extract help https://help.sap.com/docs/btp/sap-business-technology-platform --limit 5
+
+2.4 Só uma parte do sumário (regex no caminho "Item › Subitem", sem diferenciar maiúsculas)
+
+  uv run spa-extract help https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide --only "initial setup|generative ai hub"
+  uv run spa-extract help https://help.sap.com/docs/btp/sap-business-technology-platform --only "cloud foundry"
+
+2.5 Versão e idioma (padrão: LATEST e en-US; idioma sem tradução volta em inglês)
+
+  uv run spa-extract help "https://help.sap.com/docs/btp/sap-business-technology-platform?locale=pt-BR"
+  uv run spa-extract help "https://help.sap.com/docs/<produto>/<documento>?version=<versão>&locale=en-US"
+
+2.6 No lote: URL help.sap.com/docs/... no output/STATUS.md usa o comando help sozinha
+
+      ## SAP BTP — documentação
+      - [ ] https://help.sap.com/docs/btp/sap-business-technology-platform
+      - [ ] https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide
+
+  uv run python scripts/lote.py
+
+    Se der "o Help Portal não abriu o documento": abra a URL no navegador e copie a de um tópico. Documento que pede
+    login não é suportado.
+
+
+3. FORMATAR PARA BASE DE CONHECIMENTO (Claude no SAP AI Core, opcional)
+----------------------------------------------------------------------
+3.1 Uma vez, com cf login feito na org de IA (grava .env.aicore sem imprimir nada):
+
+  scripts/create-local-ai-core-key.sh
+
+3.2 Formatar a extração mais recente de um curso ou documento (grava em knowledge/NN-<curso>/<data-hora>/):
+
+  uv run spa-extract format output/00-business-transformation-consultant-certification/00-managing-business-processes-with-sap-signavio-solutions
+
+    Só os arquivos cujo caminho bate com a regex (aqui, só o primeiro módulo):
+
+  uv run spa-extract format output/04-sap-generative-ai/01-discovering-sap-s-generative-ai-hub --only "^01-"
+
+
+4. CONFERIR E MANUTENÇÃO
+------------------------
+    Lições ok / total da última extração de um curso:
+
+  python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(sum(i['status']=='ok' for i in d['items']), '/', len(d['items']))" output/14-enterprise-architect/00-intelligent-enterprise-architecture-fundamentals/*/manifest.json
+
+    Itens que falharam numa extração:
+
+  grep -l '"status": "error"' output/*/*/*/manifest.json
+
+    Testes e lint (antes de commitar):
+
+  uv run pytest
+  uv run ruff check src tests scripts
