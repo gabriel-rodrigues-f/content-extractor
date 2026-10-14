@@ -217,6 +217,10 @@ def extract_help(
     for index, item in enumerate(walk(deliverable.toc), 1):
         if only and not re.search(only, item.path_text, re.IGNORECASE):
             continue
+        if not item.file:
+            # título do sumário sem página própria (só agrupa os filhos): vira só a pasta, nada a baixar
+            log.info("· %03d %s (só título no sumário, sem página)", index, item.path_text)
+            continue
         if limit and len(report.items) >= limit:
             log.info("limite de %s item(ns) atingido", limit)
             break

@@ -45,8 +45,9 @@ BODIES = {
 
 
 class FakePortal:
-    def __init__(self):
+    def __init__(self, toc=TOC):
         self.calls = []
+        self.toc = toc
 
     def get(self, path, params):
         self.calls.append((path, dict(params)))
@@ -61,7 +62,10 @@ class FakePortal:
                 "readableUrls": {"tocReadableUrlMapping": [{"loio": "setup", "url": "initial-setup"}]},
             }
         if params.get("deliverableInfo"):
-            return {"deliverable": {"title": "SAP AI Core Service Guide", "fullToc": TOC}, "body": BODIES["setup.html"]}
+            return {
+                "deliverable": {"title": "SAP AI Core Service Guide", "fullToc": self.toc},
+                "body": BODIES["setup.html"],
+            }
         return {"body": BODIES[params["file_path"]], "currentPage": {"t": params["file_path"]}}
 
 
@@ -134,6 +138,23 @@ def test_url_so_do_documento_sem_topico(tmp_path):
     )
     assert len(report.items) == 7 and all(i["status"] == "ok" for i in report.items)
     assert "topic_url" not in portal.calls[0][1]
+
+
+def test_titulo_do_sumario_sem_pagina_vira_so_pasta(tmp_path):
+    # como no Onboarding Guide do Signavio: "User Lifecycle Management" não tem arquivo (u = None), só os filhos
+    toc = [{"t": "Users", "u": None, "c": [{"t": "Manage Users", "u": "kyma.html", "id": 8, "c": []}]}, TOC[1]]
+    portal = FakePortal(toc)
+    report = extract_help(config_for(tmp_path), URL, client=portal)
+    assert [(i["path"], i["status"]) for i in report.items] == [("Users › Manage Users", "ok"), ("What's New", "ok")]
+    pages = [
+        params for path, params in portal.calls if path.endswith("pagecontent") and "deliverableInfo" not in params
+    ]
+    assert [params["file_path"] for params in pages] == ["kyma.html", "new.html"]  # nunca pede página sem arquivo
+    out = Path(report.output)
+    assert sorted(p.relative_to(out).as_posix() for p in out.rglob("*.md")) == [
+        "01-users/01-manage-users.md",
+        "02-what-s-new.md",
+    ]
 
 
 def test_only_e_limit(tmp_path):
