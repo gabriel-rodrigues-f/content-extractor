@@ -186,4 +186,11 @@ def load_config(path: Path | None) -> Config:
             _merge(config, tomllib.load(handle))
     elif path is not None:
         raise FileNotFoundError(f"configuração não encontrada: {path}")
+    # no TOML, uma opção escrita depois de [authorized_hosts] vira um "host" e seria ignorada sem aviso
+    misplaced = sorted(set(config.authorized_hosts) & {f.name for f in fields(Config)})
+    if misplaced:
+        raise ValueError(
+            f"{', '.join(misplaced)} ficou dentro de [authorized_hosts] no extractor.toml: "
+            "mova para antes da primeira [tabela]"
+        )
     return config

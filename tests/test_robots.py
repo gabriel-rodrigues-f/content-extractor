@@ -26,3 +26,12 @@ def test_host_autorizado_passa(robots_disallow_all):
 
 def test_localhost_e_livre():
     ensure_allowed("http://127.0.0.1:8000/index.html", Config())
+
+
+def test_opcao_escrita_dentro_de_authorized_hosts_e_recusada(tmp_path):
+    from spa_content_extractor.config import load_config
+
+    toml = tmp_path / "extractor.toml"
+    toml.write_text('[authorized_hosts]\n"help.sap.com" = "parceiro"\n\noutput_dir = "/tmp/cofre"\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="output_dir ficou dentro de \\[authorized_hosts\\]"):
+        load_config(toml)

@@ -12,12 +12,15 @@
 # Opcional: texto ou seletor que só existe na página do conteúdo; o extrator espera ele aparecer (= --wait-for).
 # start_wait_for = "nav.course-outline"
 
+# Onde gravar as extrações e a formatação com IA. Fica ANTES de qualquer [tabela]: depois de um [cabeçalho], a linha
+# vira opção daquela tabela.
+# output_dir = "output"
+# knowledge_dir = "knowledge"
+
 # O extrator respeita o robots.txt. Site seu ou com permissão por escrito que bloqueia robôs: cadastre o host e a
 # autorização (fica registrada no log de cada execução).
 # [authorized_hosts]
 # "treinamento.minhaempresa.com" = "site próprio da empresa"
-
-# output_dir = "output"
 
 [selectors]
 # Container do MENU (barra lateral, árvore, lista de módulos). Vazio = detecção automática.
