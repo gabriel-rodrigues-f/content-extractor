@@ -11,6 +11,7 @@ output/[NN-<grupo>/]NN-<documento>/<data-hora>/…, com manifest.json.
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
 import random
@@ -83,7 +84,14 @@ class HelpPortalClient:
                 if payload.get("status") != "OK":
                     raise LookupError(f"o Help Portal respondeu {payload.get('status')} em {path}")
                 return payload["data"]
-            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+            # conexão cortada no meio da resposta (IncompleteRead, reset) também é falha passageira de rede
+            except (
+                urllib.error.URLError,
+                TimeoutError,
+                json.JSONDecodeError,
+                http.client.HTTPException,
+                ConnectionError,
+            ) as error:
                 if attempt == self.retries:
                     raise RuntimeError(f"Help Portal indisponível em {path}: {error}") from error
                 log.warning("Help Portal falhou (%s, tentativa %s); tentando de novo", type(error).__name__, attempt)
