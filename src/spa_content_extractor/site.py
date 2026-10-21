@@ -25,6 +25,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+from typing import Self
 from urllib import robotparser
 from urllib.parse import urldefrag, urljoin, urlparse
 
@@ -269,9 +270,10 @@ def _pause(config: Config, delay: float | None, floor: float = 0.0) -> None:
     time.sleep(max(wait, floor))
 
 
-def extract_site(
+def _extract_site(
     config: Config,
     url: str,
+    fetch_page,
     *,
     prefix: str | None = None,
     only: str | None = None,
@@ -300,7 +302,7 @@ def extract_site(
         log.info("o robots.txt pede %ss entre requisições: respeitando", robots.crawl_delay)
 
     start = normalize(url)
-    start_html = fetch(url)
+    start_html = fetch_page(url)
     start_title, _ = article(start_html, config)
     entries: list[Entry] = []
     for toc_url in json_toc_urls(url, start_html):
@@ -361,7 +363,7 @@ def extract_site(
     def get(page_url: str) -> str:
         html = cache.pop(page_url, None)
         if html is None:
-            html = fetch(page_url)
+            html = fetch_page(page_url)
             _pause(config, delay, robots.crawl_delay)
         return html
 
@@ -446,3 +448,51 @@ def extract_site(
         report.save(out / "manifest.json")
     report.save(out / "manifest.json")
     return report
+
+
+class _Renderer:
+    """Páginas montadas por JavaScript (SPA, ex.: academy.claude.com): abre cada uma no Chromium headless e devolve o
+    HTML já renderizado. Uma aba, uma página por vez; robots.txt, sitemap e sumários continuam sem navegador."""
+
+    def __init__(self, wait_for: str) -> None:
+        self.wait_for = wait_for
+
+    def __enter__(self) -> Self:
+        from playwright.sync_api import sync_playwright
+
+        self._playwright = sync_playwright().start()
+        self._browser = self._playwright.chromium.launch()
+        self._page = self._browser.new_context(user_agent=USER_AGENT).new_page()
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self._browser.close()
+        self._playwright.stop()
+
+    def __call__(self, url: str) -> str:
+        from playwright.sync_api import Error as PlaywrightError
+        from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+        for attempt in range(1, 4):
+            try:
+                self._page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                try:
+                    self._page.wait_for_selector(self.wait_for, timeout=15000)
+                    self._page.wait_for_load_state("networkidle", timeout=8000)
+                except PlaywrightTimeout:
+                    pass  # sem o seletor ou com rede sempre ativa: usa o que já renderizou
+                return self._page.content()
+            except PlaywrightError as error:
+                if attempt == 3:
+                    raise RuntimeError(f"página indisponível ({url}): {error}") from error
+                log.warning("render falhou (%s, tentativa %s); tentando de novo", type(error).__name__, attempt)
+                time.sleep(3 * attempt)
+        raise RuntimeError("inalcançável")
+
+
+def extract_site(config: Config, url: str, *, render: bool = False, **options) -> RunReport:
+    """Ver o docstring do módulo. render=True abre as páginas no navegador (SPA); senão, HTML estático."""
+    if not render:
+        return _extract_site(config, url, fetch, **options)
+    with _Renderer(options.get("content") or "article, main") as renderer:
+        return _extract_site(config, url, renderer, **options)

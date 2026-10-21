@@ -93,6 +93,7 @@ def _parser() -> argparse.ArgumentParser:
         metavar="MODELO",
         help='usa a versão em Markdown do site: "{url}?accept=text/markdown" (Microsoft Learn) ou "{url}.md"',
     )
+    st.add_argument("--render", action="store_true", help="páginas montadas por JavaScript: abre cada uma no navegador")
     st.add_argument("--name", help="nome da pasta (padrão: título da página inicial)")
     st.add_argument("--group", help="pasta que agrupa sites")
 
@@ -205,6 +206,7 @@ def _run(argv: list[str] | None) -> int:
             depth=args.depth,
             drop=args.drop,
             markdown=args.markdown,
+            render=args.render,
         )
         ok = sum(1 for i in report.items if i["status"] == "ok")
         print(f"\n{ok}/{len(report.items)} item(ns) extraído(s) em {report.output}")

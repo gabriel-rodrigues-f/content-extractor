@@ -168,3 +168,10 @@ def test_exclude_depth_e_versao_em_markdown(monkeypatch, config):
     one = next(text for name, text in texts.items() if "MD 1" in text)
     assert 'title: "Unit One"' in one and "[[u1]]" not in one and "Documentation Index" not in one
     assert any("HTML 2" in text for text in texts.values())  # .md que veio HTML: cai para o HTML
+
+
+def test_render_le_a_pagina_montada_por_javascript(spa_url, config):
+    url = spa_url.replace("index.html", "rendered/lesson.html")
+    report = extract_site(config, url, render=True, content="article")
+    text = next(Path(report.output).rglob("*.md")).read_text(encoding="utf-8")
+    assert "deterministic code" in text and report.items[0]["status"] == "ok"
