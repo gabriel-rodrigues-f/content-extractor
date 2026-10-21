@@ -60,7 +60,8 @@ def notebook_markdown(raw: str) -> str:
 
 def _title(markdown: str, fallback: str) -> str:
     heading = re.search(r"(?m)^#{1,2} (.+)$", markdown)
-    return re.sub(r"[*_`]", "", heading.group(1)).strip() if heading else fallback
+    # tira a ênfase do Markdown (**x**, __x__, *x*, `x`), mas não o "_" dentro de nomes como btp_subaccount
+    return re.sub(r"\*\*|__|\*|`", "", heading.group(1)).strip() if heading else fallback
 
 
 def extract_repo(config: Config, url: str, *, path: str = "", include: str | None = None) -> RunReport:

@@ -53,3 +53,10 @@ def test_repositorio_mantem_as_pastas(tmp_path, monkeypatch):
     note = (out / "tool-use/01-intro.md").read_text(encoding="utf-8")
     assert 'title: "Tool use"' in note and 'module: "tool_use"' in note
     assert "source: https://github.com/anthropics/courses/blob/master/tool_use/01_intro.ipynb" in note
+
+
+def test_titulo_mantem_underscore_de_nomes():
+    from spa_content_extractor.sources import _title
+
+    assert _title("# `btp_subaccount` (Resource)\n\ntext", "x") == "btp_subaccount (Resource)"
+    assert _title("## **Tool use** basics", "x") == "Tool use basics"
