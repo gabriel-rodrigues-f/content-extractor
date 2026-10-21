@@ -21,6 +21,8 @@ def test_parametros_da_linha_e_comando_pela_url():
     assert lote.command_for("https://learn.microsoft.com/en-us/entra/x") == "page"
     assert lote.command_for("https://learning.sap.com/courses/x") == "extract"
     assert lote.command_for("https://learning.sap.com/live-sessions/x") == "page"
+    assert lote.command_for("https://github.com/Azure/mlops-v2") == "repo"
+    assert lote.command_for("https://proceedings.neurips.cc/x/86df-Paper.pdf") == "pdf"
     assert lote.ITEM.match("- [~] https://d2l.ai — aguardando adaptador") is None  # fila, o lote não roda
 
 

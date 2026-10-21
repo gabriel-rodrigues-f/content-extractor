@@ -1,4 +1,4 @@
-"""CLI `spa-extract`: login · map · extract · help · page · site · format."""
+"""CLI `spa-extract`: login · map · extract · help · page · site · repo · pdf · format."""
 
 from __future__ import annotations
 
@@ -85,8 +85,28 @@ def _parser() -> argparse.ArgumentParser:
     st.add_argument("--delay", type=float, help="pausa média entre páginas em segundos (padrão: [timing] do toml)")
     st.add_argument("--resume", action="store_true", help="continua a extração mais recente, pulando o que está ok")
     st.add_argument("--content", help="seletor CSS do corpo do artigo (padrão: detecção automática)")
+    st.add_argument("--exclude", help="regex: URLs que não entram nem na varredura (ex.: idiomas, referência de API)")
+    st.add_argument("--depth", type=int, help="varredura só até N cliques da página inicial (desliga o sitemap)")
+    st.add_argument("--drop", action="append", default=[], metavar="SELETOR", help="ruído extra a remover (repita)")
+    st.add_argument(
+        "--markdown",
+        metavar="MODELO",
+        help='usa a versão em Markdown do site: "{url}?accept=text/markdown" (Microsoft Learn) ou "{url}.md"',
+    )
     st.add_argument("--name", help="nome da pasta (padrão: título da página inicial)")
     st.add_argument("--group", help="pasta que agrupa sites")
+
+    rp = sub.add_parser("repo", help="repositório do GitHub: .md e notebooks .ipynb viram notas (clone raso)")
+    rp.add_argument("url", help="https://github.com/<dono>/<repositório>")
+    rp.add_argument("--path", default="", help="só esta subpasta do repositório")
+    rp.add_argument("--include", help="regex no caminho dos arquivos a converter")
+    rp.add_argument("--name", help="nome da pasta (padrão: dono-repositório)")
+    rp.add_argument("--group", help="pasta que agrupa fontes")
+
+    pdf = sub.add_parser("pdf", help="documento PDF (paper, guia): o texto vira uma nota")
+    pdf.add_argument("url")
+    pdf.add_argument("--name", help="título/nome da pasta (padrão: título do PDF)")
+    pdf.add_argument("--group", help="pasta que agrupa fontes")
 
     fmt = sub.add_parser("format", help="formata os .md brutos de uma execução com Claude no SAP AI Core")
     fmt.add_argument(
@@ -181,6 +201,22 @@ def _run(argv: list[str] | None) -> int:
             delay=args.delay,
             resume=args.resume,
             content=args.content,
+            exclude=args.exclude,
+            depth=args.depth,
+            drop=args.drop,
+            markdown=args.markdown,
+        )
+        ok = sum(1 for i in report.items if i["status"] == "ok")
+        print(f"\n{ok}/{len(report.items)} item(ns) extraído(s) em {report.output}")
+        return 0 if ok == len(report.items) else 2
+
+    if args.command in {"repo", "pdf"}:
+        from .sources import extract_pdf, extract_repo
+
+        report = (
+            extract_repo(config, args.url, path=args.path, include=args.include)
+            if args.command == "repo"
+            else extract_pdf(config, args.url)
         )
         ok = sum(1 for i in report.items if i["status"] == "ok")
         print(f"\n{ok}/{len(report.items)} item(ns) extraído(s) em {report.output}")

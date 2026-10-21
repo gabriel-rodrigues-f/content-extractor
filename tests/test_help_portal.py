@@ -217,3 +217,14 @@ def test_subtree_leva_so_o_topico_da_url_e_os_filhos(tmp_path):
     assert out.parent.name == "00-sap-ai-core-service-guide-initial-setup"
     assert report.url.startswith("https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide/initial-setup?")
     assert (out / "03-initial-setup/00-initial-setup.md").exists()  # numeração do documento inteiro, para o contexto
+
+
+def test_produto_com_espacos_na_url():
+    doc = parse_url(
+        "https://help.sap.com/docs/SAP%20SECURE%20LOGIN%20SERVICE/c35917ca71e941c5a97a11d2c55dcacd?version=Cloud"
+    )
+    assert (doc.product, doc.deliverable, doc.version) == (
+        "SAP SECURE LOGIN SERVICE",
+        "c35917ca71e941c5a97a11d2c55dcacd",
+        "Cloud",
+    )

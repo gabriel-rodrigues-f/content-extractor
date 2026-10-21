@@ -138,6 +138,44 @@ inteiro, do primeiro item do sumário). Grupo do sumário vira pasta e a página
     login não é suportado.
 
 
+2.7 Só um tópico e os filhos (não o documento inteiro)
+
+  uv run spa-extract help https://help.sap.com/docs/btp/sap-business-technology-platform/btp-security --subtree --group "btp-security"
+
+
+2B. OUTRAS FONTES (page, site, repo, pdf)
+-----------------------------------------
+    Um artigo (Microsoft Learn, post):
+
+  uv run spa-extract page https://learn.microsoft.com/en-us/entra/identity-platform/saml-claims-customization --group "entra-id"
+
+    Documentação inteira da AWS (sumário toc-contents.json; respeita o Crawl-delay de 5 s):
+
+  uv run spa-extract site https://docs.aws.amazon.com/bedrock/latest/userguide/what-is-bedrock.html --name "Amazon Bedrock User Guide" --group "aws-ai"
+
+    Microsoft Learn usando a versão em Markdown (abas e pivôs resolvidos):
+
+  uv run spa-extract site https://learn.microsoft.com/en-us/azure/foundry/what-is-foundry --prefix https://learn.microsoft.com/en-us/azure/foundry/ --markdown "{url}?accept=text/markdown" --name "Microsoft Foundry"
+
+    Site sem sumário, com profundidade e exclusões (scikit-learn):
+
+  uv run spa-extract site https://scikit-learn.org/stable/user_guide.html --depth 1 --exclude "/(api|auto_examples|modules/generated)" --name "scikit-learn User Guide"
+
+    Continuar uma extração grande que parou no meio:
+
+  uv run spa-extract site https://docs.aws.amazon.com/sagemaker/latest/dg/whatis.html --name "Amazon SageMaker AI Developer Guide" --resume
+
+    Repositório do GitHub (só a pasta docs) e PDF:
+
+  uv run spa-extract repo https://github.com/SAP/terraform-provider-btp --path docs
+  uv run spa-extract pdf https://proceedings.neurips.cc/paper_files/paper/2015/file/86df7dcfd896fcaf2674f757a2463eba-Paper.pdf
+
+    Lote em paralelo (um worker por site, nunca dois no mesmo site):
+
+  uv run python scripts/lote.py --workers 12
+  uv run python scripts/lote.py --workers 4 --groups "BTP Security"
+
+
 3. FORMATAR PARA BASE DE CONHECIMENTO (Claude no SAP AI Core, opcional)
 ----------------------------------------------------------------------
 3.1 Uma vez, com cf login feito na org de IA (grava .env.aicore sem imprimir nada):

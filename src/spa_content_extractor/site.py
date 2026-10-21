@@ -72,8 +72,19 @@ def normalize(url: str) -> str:
     return urldefrag(url)[0].split("?", 1)[0]
 
 
-def inside(url: str, prefix: str) -> bool:
-    return url.startswith(prefix) and not SKIP_EXT.search(urlparse(url).path)
+@dataclass
+class Scope:
+    """O que entra na extração: URLs que começam com o prefixo, não são arquivos e não batem com --exclude."""
+
+    prefix: str
+    exclude: re.Pattern | None = None
+
+    def __contains__(self, url: str) -> bool:
+        return (
+            url.startswith(self.prefix)
+            and not SKIP_EXT.search(urlparse(url).path)
+            and not (self.exclude and self.exclude.search(url))
+        )
 
 
 # --- sumário em JSON ----------------------------------------------------------------------------------------------
@@ -82,7 +93,7 @@ _TITLE_KEYS = ("toc_title", "title", "name")
 _CHILD_KEYS = ("children", "contents", "items")
 
 
-def _walk_toc(nodes: list, base: str, prefix: str, titles=(), positions=()) -> Iterator[Entry]:
+def _walk_toc(nodes: list, base: str, scope: Scope, titles=(), positions=()) -> Iterator[Entry]:
     number = 0
     for node in nodes:
         if not isinstance(node, dict):
@@ -91,9 +102,9 @@ def _walk_toc(nodes: list, base: str, prefix: str, titles=(), positions=()) -> I
         children = next((node[k] for k in _CHILD_KEYS if isinstance(node.get(k), list)), [])
         href = node.get("href") or ""
         url = normalize(urljoin(base, href)) if href else ""
-        if url and not inside(url, prefix):
+        if url and url not in scope:
             url = ""  # aponta para fora da seção: fica só o título (e os filhos que estiverem dentro)
-        sub = list(_walk_toc(children, base, prefix, (*titles, title or "sem título"), (*positions, number + 1)))
+        sub = list(_walk_toc(children, base, scope, (*titles, title or "sem título"), (*positions, number + 1)))
         if not url and not sub:
             continue  # nada desta ramificação está dentro do prefixo
         number += 1
@@ -101,11 +112,11 @@ def _walk_toc(nodes: list, base: str, prefix: str, titles=(), positions=()) -> I
         yield from sub
 
 
-def toc_from_json(data: object, base: str, prefix: str) -> list[Entry]:
+def toc_from_json(data: object, base: str, scope: Scope) -> list[Entry]:
     nodes = data
     if isinstance(data, dict):
         nodes = next((data[k] for k in _CHILD_KEYS if isinstance(data.get(k), list)), [])
-    entries = list(_walk_toc(nodes if isinstance(nodes, list) else [], base, prefix))
+    entries = list(_walk_toc(nodes if isinstance(nodes, list) else [], base, scope))
     # números dos filhos foram calculados antes de saber se o irmão anterior ficou de fora: renumera por nível
     return _renumber(entries)
 
@@ -139,7 +150,7 @@ def json_toc_urls(start: str, html: str) -> list[str]:
 # --- sitemap e varredura ------------------------------------------------------------------------------------------
 
 
-def sitemap_urls(start: str, prefix: str, robots_txt: str, limit: int = 20000) -> list[str]:
+def sitemap_urls(start: str, scope: Scope, robots_txt: str, limit: int = 20000) -> list[str]:
     parsed = urlparse(start)
     pending = [line.split(":", 1)[1].strip() for line in robots_txt.splitlines() if line.lower().startswith("sitemap:")]
     pending = pending or [f"{parsed.scheme}://{parsed.netloc}/sitemap.xml"]
@@ -161,15 +172,15 @@ def sitemap_urls(start: str, prefix: str, robots_txt: str, limit: int = 20000) -
                 # índice de sitemaps: só segue os que podem ter o prefixo
                 if urlparse(url).netloc == parsed.netloc:
                     pending.append(url)
-            elif inside(normalize(url), prefix):
+            elif normalize(url) in scope:
                 urls.append(normalize(url))
     return list(dict.fromkeys(urls))
 
 
-def page_links(url: str, html: str, prefix: str) -> list[str]:
+def page_links(url: str, html: str, scope: Scope) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
     links = (normalize(urljoin(url, a["href"])) for a in soup.find_all("a", href=True))
-    return list(dict.fromkeys(link for link in links if inside(link, prefix)))
+    return list(dict.fromkeys(link for link in links if link in scope))
 
 
 def url_entries(urls: list[str], prefix: str, titles: dict[str, str]) -> list[Entry]:
@@ -181,15 +192,46 @@ def url_entries(urls: list[str], prefix: str, titles: dict[str, str]) -> list[En
         return siblings.setdefault(name, len(siblings) + 1)
 
     for url in urls:
-        rest = url[len(prefix) :].strip("/") or "index"
-        parts = rest.split("/")
+        rest = url[len(prefix) :] if url.startswith(prefix) else urlparse(url).path.rsplit("/", 1)[-1]
+        parts = (rest.strip("/") or "index").split("/")
         names, positions = [], []
         for depth, part in enumerate(parts):
             positions.append(position(tuple(parts[:depth]), part))
-            names.append(re.sub(r"\.(html?|aspx)$", "", part) or "index")
+            names.append(re.sub(r"\.(html?|aspx|md)$", "", part) or "index")
         names[-1] = titles.get(url) or names[-1]
         entries.append(Entry(tuple(names), tuple(positions), url))
     return entries
+
+
+# --- versão em Markdown publicada pelo site ------------------------------------------------------------------------
+
+_FRONT = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
+
+
+def markdown_url(url: str, template: str) -> str:
+    """--markdown "{url}?accept=text/markdown" (Microsoft Learn) ou "{url}.md" (Mintlify, GitBook, Hugging Face)."""
+    return template.replace("{url}", url.rstrip("/"))
+
+
+def clean_markdown(text: str) -> tuple[str, str]:
+    """(título, corpo) da versão em Markdown: sem o front matter YAML, sem o aviso de índice para LLMs no topo
+    (MCP) e sem as âncoras [[...]] nos títulos (Hugging Face)."""
+    title = ""
+    front = _FRONT.match(text)
+    if front:
+        found = re.search(r"^title:\s*[\"']?(.+?)[\"']?\s*$", front.group(1), re.MULTILINE)
+        title = found.group(1).strip() if found else ""
+        text = text[front.end() :]
+    lines = text.lstrip().splitlines()
+    while (
+        lines and lines[0].startswith(">") and re.search(r"llms(-full)?\.txt|Documentation Index", "\n".join(lines[:6]))
+    ):
+        lines.pop(0)  # bloco de citação "Documentation Index … llms.txt" do topo
+    body = re.sub(r"(?m)^(#{1,6} .*?)\s*\[\[[^\]]+\]\]\s*$", r"\1", "\n".join(lines)).strip() + "\n"
+    if not title:
+        heading = re.search(r"(?m)^# (.+)$", body)
+        title = heading.group(1).strip() if heading else ""
+    return title, body
 
 
 # --- extração -----------------------------------------------------------------------------------------------------
@@ -238,8 +280,13 @@ def extract_site(
     delay: float | None = None,
     resume: bool = False,
     content: str | None = None,
+    exclude: str | None = None,
+    depth: int | None = None,
+    drop: list[str] | None = None,
+    markdown: str | None = None,
 ) -> RunReport:
-    prefix = prefix or default_prefix(url)
+    scope = Scope(prefix or default_prefix(url), re.compile(exclude, re.IGNORECASE) if exclude else None)
+    prefix = scope.prefix
     robots = _Robots(url, config)
     if robots.authorized:
         log.warning("%s: execução autorizada (%s)", urlparse(url).hostname, robots.authorized)
@@ -247,15 +294,18 @@ def extract_site(
         raise PermissionError(f"O robots.txt de {urlparse(url).hostname} não permite robôs em {url}.")
     if content:
         config.selectors.content_container = content
+    if drop:
+        config.selectors.noise = [*config.selectors.noise, *drop]
     if robots.crawl_delay:
         log.info("o robots.txt pede %ss entre requisições: respeitando", robots.crawl_delay)
 
+    start = normalize(url)
     start_html = fetch(url)
     start_title, _ = article(start_html, config)
     entries: list[Entry] = []
     for toc_url in json_toc_urls(url, start_html):
         try:
-            entries = toc_from_json(json.loads(fetch(toc_url, retries=1)), toc_url, prefix)
+            entries = toc_from_json(json.loads(fetch(toc_url, retries=1)), toc_url, scope)
         except (RuntimeError, ValueError):
             continue
         if any(e.url for e in entries):
@@ -263,16 +313,15 @@ def extract_site(
             break
         entries = []
     crawl = not entries
-    if crawl:
-        urls = sitemap_urls(url, prefix, robots.text)
+    if crawl and depth is None:
+        urls = sitemap_urls(url, scope, robots.text)
         if urls:
             log.info("sitemap: %s páginas dentro de %s", len(urls), prefix)
-            if normalize(url) in urls:
-                urls.remove(normalize(url))
-            entries = url_entries([normalize(url), *urls], prefix, {normalize(url): start_title})
+            first = [start] if start in scope and start not in urls else []
+            entries = url_entries([*first, *urls], prefix, {start: start_title})
             crawl = False
-        else:
-            log.info("sem sumário nem sitemap: varredura pelos links dentro de %s", prefix)
+    if crawl:
+        log.info("varredura pelos links dentro de %s%s", prefix, f" (até {depth} nível(is))" if depth else "")
 
     name = config.course_name or start_title
     course = course_dir(config, prefix, name)
@@ -292,11 +341,12 @@ def extract_site(
 
     toc_mode = bool(entries) and not crawl and any(len(e.positions) > 1 or e.has_children for e in entries)
     seen: set[str] = set()
-    queue = [normalize(url)]
+    levels = {start: 0}
+    queue = [start]
     crawled: list[str] = []
     titles: dict[str, str] = {}
     planned = iter(entries)
-    cache = {normalize(url): start_html}
+    cache = {start: start_html}
     index = 0
 
     def next_entry() -> Entry | None:
@@ -315,6 +365,21 @@ def extract_site(
             _pause(config, delay, robots.crawl_delay)
         return html
 
+    def read(page_url: str, html: str | None) -> tuple[str, str]:
+        """(título, Markdown) da página: a versão em Markdown do site, se pedida e disponível; senão, o HTML."""
+        if markdown:
+            try:
+                text = fetch(markdown_url(page_url, markdown))
+                _pause(config, delay, robots.crawl_delay)
+                if not text.lstrip().lower().startswith(("<!doctype", "<html")):
+                    title, body = clean_markdown(text)
+                    if body.strip():
+                        return title, body
+            except RuntimeError as error:
+                log.info("sem versão em Markdown de %s (%s); usando o HTML", page_url, error)
+        title, body = article(html if html is not None else get(page_url), config)
+        return title, to_markdown(strip_noise(body, config))
+
     while (entry := next_entry()) is not None:
         index += 1
         if not entry.url:
@@ -328,8 +393,7 @@ def extract_site(
             continue
         if entry.url in done and not crawl:
             continue
-        new_items = len(report.items) - len(done)
-        if limit and new_items >= limit:
+        if limit and len(report.items) - len(done) >= limit:
             log.info("limite de %s página(s) atingido", limit)
             break
         if len(report.items) >= max_pages:
@@ -337,10 +401,19 @@ def extract_site(
             break
         item: dict = {"index": index, "url": entry.url, "status": "pending"}
         try:
-            html = get(entry.url)
+            html = None
             if crawl:
-                # na varredura, toda página lida (mesmo já extraída ou fora do --only) alimenta a fila e a numeração
-                queue.extend(link for link in page_links(entry.url, html, prefix) if link not in seen)
+                # na varredura, toda página lida (mesmo já extraída, fora do --only ou fora do prefixo, como uma
+                # página inicial de trilha) alimenta a fila e a numeração
+                html = get(entry.url)
+                level = levels.get(entry.url, 0)
+                if depth is None or level < depth:
+                    for link in page_links(entry.url, html, scope):
+                        if link not in seen:
+                            queue.append(link)
+                            levels.setdefault(link, level + 1)
+                if entry.url not in scope:
+                    continue
                 crawled.append(entry.url)
                 titles[entry.url] = done.get(entry.url, {}).get("title") or article(html, config)[0]
                 entry = url_entries(crawled, prefix, titles)[-1]
@@ -348,10 +421,9 @@ def extract_site(
                     continue
             if only and not re.search(only, f"{entry.path_text} {entry.url}", re.IGNORECASE):
                 continue
-            title, body = article(html, config)
-            page_title = entry.titles[-1] if toc_mode else title
-            markdown = to_markdown(strip_noise(body, config))
-            if not markdown.strip():
+            title, text = read(entry.url, html)
+            page_title = entry.titles[-1] if toc_mode else (title or entry.titles[-1])
+            if not text.strip():
                 raise ValueError("página sem conteúdo")
             relative = entry.relative_file()
             target = out / relative
@@ -361,12 +433,12 @@ def extract_site(
                 f'---\ntitle: "{page_title.replace(chr(34), chr(39))}"\n'
                 + (f'module: "{module}"\n' if module and toc_mode else "")
                 + f"source: {entry.url}\nextracted_at: {datetime.now(UTC).isoformat(timespec='seconds')}\n---\n\n"
-                + f"# {page_title}\n\n" * (not markdown.lstrip().startswith("#"))
-                + markdown,
+                + f"# {page_title}\n\n" * (not text.lstrip().startswith("#"))
+                + text,
                 encoding="utf-8",
             )
-            item.update(status="ok", path=entry.path_text, title=page_title, file=str(relative), chars=len(markdown))
-            log.info("✓ %04d %s (%s caracteres)", index, entry.path_text, len(markdown))
+            item.update(status="ok", path=entry.path_text, title=page_title, file=str(relative), chars=len(text))
+            log.info("✓ %04d %s (%s caracteres)", index, entry.path_text, len(text))
         except (RuntimeError, ValueError, OSError) as error:
             item.update(status="error", path=entry.path_text, error=f"{type(error).__name__}: {error}")
             log.warning("✗ %04d %s — %s", index, entry.url, error)

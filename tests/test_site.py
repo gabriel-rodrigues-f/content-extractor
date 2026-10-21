@@ -142,3 +142,29 @@ def test_respeita_o_crawl_delay_do_robots(monkeypatch, config):
     )
     extract_site(config, ROOT, delay=1)
     assert sleeps and min(sleeps) >= 5
+
+
+def test_exclude_depth_e_versao_em_markdown(monkeypatch, config):
+    pages = {
+        "https://docs.example.com/robots.txt": "User-agent: *\n",
+        # página inicial fora do prefixo (como uma trilha que aponta para módulos): só serve para descobrir links
+        "https://docs.example.com/paths/p1/": page("Path", "Path.", ["/guide/m1/", "/guide/es/m1/"]),
+        ROOT + "m1/": page("Module", "Module.", ["u1", "u2"]),
+        ROOT + "m1/u1": page("Unit 1", "HTML 1", ["/guide/m2/"]),
+        ROOT + "m1/u2": page("Unit 2", "HTML 2"),
+        ROOT
+        + "m1/u1.md": "---\ntitle: Unit One\n---\n> ## Documentation Index\n> see /llms.txt\n\n# Unit One [[u1]]\n\nMD 1\n",
+        ROOT + "m1/u2.md": "<!DOCTYPE html><html>not markdown</html>",
+        ROOT + "m1.md": "# Module\n\nMD module\n",
+    }
+    calls = fake_site(monkeypatch, pages)
+    report = extract_site(
+        config, "https://docs.example.com/paths/p1/", prefix=ROOT, exclude=r"/es/", depth=2, markdown="{url}.md"
+    )
+    out = Path(report.output)
+    assert files(report) == ["01-m1/01-unit-1.md", "01-m1/02-unit-2.md", "01-module.md"]
+    assert not any("/es/" in c or "/m2/" in c for c in calls)  # --exclude e --depth cortam a varredura
+    texts = {p.name: p.read_text(encoding="utf-8") for p in out.rglob("*.md")}
+    one = next(text for name, text in texts.items() if "MD 1" in text)
+    assert 'title: "Unit One"' in one and "[[u1]]" not in one and "Documentation Index" not in one
+    assert any("HTML 2" in text for text in texts.values())  # .md que veio HTML: cai para o HTML

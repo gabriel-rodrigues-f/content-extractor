@@ -10,6 +10,7 @@ dependencies = [
     "beautifulsoup4>=4.15.0",
     "markdownify>=1.2.3",
     "playwright>=1.63.0",
+    "pypdf>=6.21.2",
     "python-dotenv>=1.2.4",
     "sap-ai-sdk-gen>=7.4.1",
 ]

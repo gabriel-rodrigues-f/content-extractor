@@ -103,6 +103,42 @@ uv run spa-extract help https://help.sap.com/docs/sap-ai-core/sap-ai-core-servic
   (`scripts/lote.py`), URLs `help.sap.com/docs/…` usam este comando sozinhas.
 - O `robots.txt` do help.sap.com proíbe robôs: só roda com o host em `authorized_hosts` no `extractor.toml`.
 
+### Tópico, formatos de URL
+
+- `--subtree`: só o tópico da URL e o que está abaixo dele no sumário, numa pasta própria (`<documento> - <tópico>`),
+  em vez do documento inteiro.
+- Além de `/docs/<produto>/<documento>/<tópico>`, aceita `/docs/r/<documento>/<versão>/<idioma>/<tópico>.html`, o formato
+  antigo `/viewer/…` e IDs de produto com espaços (`SAP%20SECURE%20LOGIN%20SERVICE`).
+
+## Outras fontes (`page`, `site`, `repo`, `pdf`)
+
+| Comando | Para quê | Como acha as páginas |
+| --- | --- | --- |
+| `page <url>` | um artigo estático (learn.microsoft.com, descrição de live session, post) | — |
+| `site <url>` | documentação estática inteira ou uma seção (AWS, Microsoft Learn, Sphinx, MkDocs, GitBook, Mintlify) | `toc.json` do Microsoft Learn ou `toc-contents.json` da AWS; senão o sitemap; senão os links das páginas |
+| `repo <url>` | repositório do GitHub (clone raso): `.md` e notebooks `.ipynb` sem as saídas | árvore do repositório (`--path` limita a uma pasta) |
+| `pdf <url>` | paper ou guia em PDF | texto página a página (pypdf) |
+
+Opções do `site`:
+- `--prefix`: só entram URLs que começam com isso. O padrão é a pasta da URL inicial; a página inicial pode ficar fora do prefixo e servir só para achar os links (ex.: uma trilha que aponta para módulos).
+- `--exclude REGEX`: URLs que nem entram na varredura (idiomas, referência de API).
+- `--depth N`: a varredura vai até N cliques da página inicial e não usa o sitemap.
+- `--only REGEX`: só grava as páginas cujo caminho no sumário ou URL bate (ex.: `"AI \+ Machine Learning"`).
+- `--drop SELETOR`: ruído extra a remover (ex.: as abas MXNet/JAX/TensorFlow do d2l).
+- `--content SELETOR`: o corpo do artigo, quando a detecção automática erra.
+- `--markdown MODELO`: usa a versão em Markdown que o próprio site publica, `"{url}?accept=text/markdown"` no Microsoft Learn ou `"{url}.md"` em Mintlify, GitBook e Hugging Face. Resolve abas e pivôs de linguagem e, com sumário ou sitemap, faz uma requisição por página.
+- `--resume`: continua a extração mais recente sem refazer nem renumerar o que já está ok.
+- `--delay S`: pausa média entre páginas. Nunca fica abaixo do `Crawl-delay` do robots.txt (a AWS pede 5 s).
+
+### Lote em paralelo
+
+`scripts/lote.py --workers N` roda até N itens do `STATUS.md` ao mesmo tempo, **nunca dois do mesmo site**: cada host
+continua recebendo uma requisição por vez. Parâmetros depois da URL valem só para a linha, e a primeira palavra pode
+ser o comando (`- [ ] <url> site --depth 2 --name "…"`). O comando vem da URL quando a linha não diz: help.sap.com/docs →
+`help`, learn.microsoft.com → `page`, github.com → `repo`, `.pdf` → `pdf`, o resto → `extract`. Marcas: `[~]` na fila
+aguardando adaptador, `[-]` pulado de propósito, `[>]` em andamento (com o pid; volta a pendente se o processo morreu).
+`--groups REGEX` limita aos grupos cujo título bate.
+
 ## Instalação
 
 ```sh

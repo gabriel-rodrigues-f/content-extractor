@@ -85,7 +85,7 @@ def _numbered(root: Path, name: str, url: str | None = None) -> Path:
         if match.group(2) == slug or (url and _extracted_from(folder, url)):
             return folder
     path = root / f"{(max(numbers) + 1 if numbers else 0):02d}-{slug}"
-    path.mkdir()
+    path.mkdir(exist_ok=True)  # outro processo do lote pode ter criado a mesma pasta no mesmo instante
     return path
 
 

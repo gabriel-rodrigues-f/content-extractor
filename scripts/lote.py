@@ -85,6 +85,10 @@ def copy_into(output: Path, source: Path, group_dir: Path) -> Path:
 def command_for(url: str) -> str:
     if "://help.sap.com/docs/" in url:
         return "help"  # documento do SAP Help Portal: sumário pela API do portal
+    if "://github.com/" in url:
+        return "repo"  # repositório: clone raso, .md e notebooks
+    if urlparse(url).path.lower().endswith(".pdf"):
+        return "pdf"
     if "://learn.microsoft.com/" in url or "://learning.sap.com/live-sessions/" in url:
         return "page"  # artigo (ou descrição de sessão ao vivo) estático, uma página por linha
     return "extract"
@@ -95,7 +99,7 @@ def line_args(rest: str) -> str:
     return rest.split(" — ", 1)[0].strip()
 
 
-COMMANDS = {"extract", "help", "page", "site"}
+COMMANDS = {"extract", "help", "page", "site", "repo", "pdf"}
 
 
 def extract(output: Path, url: str, group: str, args: str = "") -> tuple[bool, str]:
@@ -216,6 +220,8 @@ def main() -> int:
         print(f"pendentes: {len(queue)}", flush=True)
         return 0
 
+    for group in dict.fromkeys(item[0] for item in queue):
+        _numbered(output, group)  # pastas dos grupos antes dos workers: dois ao mesmo tempo não disputam o número
     busy: set[str] = set()
     stopped: dict[str, str] = {}  # host → motivo (sessão expirada: o resto daquele site falharia igual)
     changed = threading.Condition()

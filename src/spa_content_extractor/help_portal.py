@@ -53,7 +53,7 @@ class HelpDoc:
 
 def parse_url(url: str) -> HelpDoc:
     parsed = urllib.parse.urlparse(url)
-    parts = [p for p in parsed.path.split("/") if p]
+    parts = [urllib.parse.unquote(p) for p in parsed.path.split("/") if p]  # "SAP%20SECURE%20LOGIN%20SERVICE"
     if parts[:1] == ["viewer"] and len(parts) >= 5:
         # formato antigo: /viewer/<loio do documento>/<versão>/<idioma>/<loio do tópico>.html — o mesmo do /docs/r/
         parts = ["docs", "r", *parts[1:]]
@@ -155,7 +155,7 @@ def load_deliverable(client: HelpPortalClient, doc: HelpDoc) -> Deliverable:
         toc=page["deliverable"].get("fullToc") or [],
         readable={m["loio"]: m["url"] for m in mapping if m.get("loio") and m.get("url")},
         topic_file=meta["filePath"],
-        path=f"{product}/{readable_urls.get('deliverableReadableUrl') or doc.deliverable}",
+        path=urllib.parse.quote(f"{product}/{readable_urls.get('deliverableReadableUrl') or doc.deliverable}"),
     )
 
 
