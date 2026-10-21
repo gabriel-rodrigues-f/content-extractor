@@ -111,5 +111,6 @@ class _KnowledgeMarkdown(MarkdownConverter):
 def to_markdown(soup: BeautifulSoup) -> str:
     markdown = _KnowledgeMarkdown(heading_style="ATX", bullets="-", strip=["span"]).convert_soup(soup)
     markdown = re.sub(r"[ \t]+\n", "\n", markdown)
+    markdown = re.sub(r"(?m)^#{1,6}[ \t]*$\n?", "", markdown)  # título vazio (ex.: <h3></h3> decorativo)
     markdown = re.sub(r"\n{3,}", "\n\n", markdown)
     return markdown.strip() + "\n"

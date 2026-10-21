@@ -60,3 +60,10 @@ def test_guia_da_aws_e_titulos_do_sphinx():
     )
     title, body = article(sphinx, Config())
     assert title == "Installation" and "¶" not in body
+
+
+def test_titulo_vazio_sai_do_markdown():
+    from spa_content_extractor.content import strip_noise, to_markdown
+
+    markdown = to_markdown(strip_noise("<h3></h3><p>Note: tooling changed.</p><h2>What are agents?</h2>", Config()))
+    assert markdown.startswith("Note: tooling changed.") and "## What are agents?" in markdown
