@@ -1,4 +1,4 @@
-"""CLI `spa-extract`: login · map · extract · format."""
+"""CLI `spa-extract`: login · map · extract · help · page · format."""
 
 from __future__ import annotations
 
@@ -61,6 +61,18 @@ def _parser() -> argparse.ArgumentParser:
     hlp.add_argument("--limit", type=int, help="no máximo N páginas (teste)")
     hlp.add_argument("--name", help="nome da pasta do documento (padrão: título do documento no portal)")
     hlp.add_argument("--group", help='pasta que agrupa documentos (ex.: "ai-core" → output/NN-ai-core/NN-<documento>/)')
+    hlp.add_argument(
+        "--subtree",
+        action="store_true",
+        help="só o tópico da URL e os que estão abaixo dele no sumário (padrão: o documento inteiro)",
+    )
+
+    pg = sub.add_parser(
+        "page", help="extrai uma página de artigo estática (ex.: learn.microsoft.com), sem navegador e sem menu"
+    )
+    pg.add_argument("url")
+    pg.add_argument("--name", help="nome da pasta (padrão: título da página)")
+    pg.add_argument("--group", help='pasta que agrupa páginas (ex.: "entra-id" → output/NN-entra-id/NN-<página>/)')
 
     fmt = sub.add_parser("format", help="formata os .md brutos de uma execução com Claude no SAP AI Core")
     fmt.add_argument(
@@ -129,7 +141,15 @@ def _run(argv: list[str] | None) -> int:
     if args.command == "help":
         from .help_portal import extract_help
 
-        report = extract_help(config, args.url, only=args.only, limit=args.limit)
+        report = extract_help(config, args.url, only=args.only, limit=args.limit, subtree_only=args.subtree)
+        ok = sum(1 for i in report.items if i["status"] == "ok")
+        print(f"\n{ok}/{len(report.items)} item(ns) extraído(s) em {report.output}")
+        return 0 if ok == len(report.items) else 2
+
+    if args.command == "page":
+        from .page import extract_page
+
+        report = extract_page(config, args.url)
         ok = sum(1 for i in report.items if i["status"] == "ok")
         print(f"\n{ok}/{len(report.items)} item(ns) extraído(s) em {report.output}")
         return 0 if ok == len(report.items) else 2

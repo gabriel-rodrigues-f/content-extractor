@@ -5,6 +5,13 @@ terminar, a linha vira "- [x] <url> — N/M lições · <pasta>" (ou "- [!] <url
 cursos do grupo terminam, o título ganha " — concluído". Rodar de novo retoma do primeiro curso não concluído (e tenta
 de novo os que falharam). Um curso já extraído em outro grupo é copiado, não baixado de novo.
 
+Parâmetros de uma linha vão depois da URL e valem só para ela, ex.: "- [ ] <url> --subtree" ou
+"- [ ] <url> --only 'Mapping Role Collections'". O comando sai da URL: help.sap.com/docs → help, learn.microsoft.com →
+page, o resto → extract.
+
+Outras marcas são ignoradas pelo lote e ficam no arquivo: "[~]" = na fila, aguardando um adaptador do extrator;
+"[-]" = pulado de propósito (o motivo vai depois do " — ").
+
 Uso, na pasta do projeto:  uv run python scripts/lote.py [--dry]
 """
 
@@ -12,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -27,7 +35,7 @@ class SessionExpired(Exception):
     pass
 
 
-ITEM = re.compile(r"^- \[( |x|!)\] (\S+)")
+ITEM = re.compile(r"^- \[( |x|!)\] (\S+)(.*)$")
 RESULT = re.compile(r"(\d+)/(\d+) item\(ns\) extraído\(s\) em (.+)$")
 
 
@@ -62,17 +70,35 @@ def copy_into(output: Path, source: Path, group_dir: Path) -> Path:
 
 
 def command_for(url: str) -> str:
-    return "help" if "://help.sap.com/docs/" in url else "extract"
+    if "://help.sap.com/docs/" in url:
+        return "help"  # documento do SAP Help Portal: sumário pela API do portal
+    if "://learn.microsoft.com/" in url or "://learning.sap.com/live-sessions/" in url:
+        return "page"  # artigo (ou descrição de sessão ao vivo) estático, uma página por linha
+    return "extract"
 
 
-def extract(output: Path, url: str, group: str) -> tuple[bool, str]:
+def line_args(rest: str) -> str:
+    """Parâmetros escritos depois da URL, antes do " — <resultado>"."""
+    return rest.split(" — ", 1)[0].strip()
+
+
+def extract(output: Path, url: str, group: str, args: str = "") -> tuple[bool, str]:
     logs = output / ".logs"
     logs.mkdir(exist_ok=True)
     log = logs / f"{url.rstrip('/').rsplit('/', 1)[-1]}.log"
     with log.open("w", encoding="utf-8") as handle:
         code = subprocess.run(
             # documento do SAP Help Portal: comando próprio (sumário pela API do portal); o resto, curso
-            [sys.executable, "-m", "spa_content_extractor.cli", command_for(url), url, "--group", group],
+            [
+                sys.executable,
+                "-m",
+                "spa_content_extractor.cli",
+                command_for(url),
+                url,
+                "--group",
+                group,
+                *shlex.split(args),
+            ],
             stdout=handle,
             stderr=subprocess.STDOUT,
             check=False,
@@ -115,13 +141,14 @@ def main() -> int:
         match = ITEM.match(line)
         if not match or group is None or match.group(1) == "x":
             continue
-        url = match.group(2)
+        url, args = match.group(2), line_args(match.group(3))
         pending += 1
         if dry:
-            print(f"{group} · {url}")
+            print(f"{group} · {url}{' ' + args if args else ''}")
             continue
         group_dir = _numbered(output, group)
-        source = latest_extraction(output, url)
+        # com parâmetros (--only, --subtree) a extração é parcial: não vale como cópia de outra
+        source = None if args else latest_extraction(output, url)
         if source is not None and source.parent.parent != group_dir:
             target = copy_into(output, source, group_dir)
             ok, note = True, f"copiado de {source.relative_to(output)} → {target.relative_to(output)}"
@@ -129,12 +156,12 @@ def main() -> int:
             ok, note = True, f"já extraído · {source.relative_to(output)}"
         else:
             try:
-                ok, note = extract(output, url, group)
+                ok, note = extract(output, url, group, args)
             except SessionExpired as error:
                 # todo o resto falharia igual: para o lote sem marcar nada; depois do login, rodar de novo retoma daqui
                 print(f"■ lote parado: {error}", flush=True)
                 return 4
-        lines[index] = f"- [{'x' if ok else '!'}] {url} — {note}"
+        lines[index] = f"- [{'x' if ok else '!'}] {url}{' ' + args if args else ''} — {note}"
         save()
         print(f"{'✓' if ok else '✗'} {group} · {url.rsplit('/', 1)[-1]} · {note}", flush=True)
     print(f"{'pendentes' if dry else 'processados'}: {pending}", flush=True)

@@ -59,6 +59,11 @@ def parse_url(url: str) -> HelpDoc:
             "use uma URL de documento do Help Portal: https://help.sap.com/docs/<produto>/<documento>[/<tópico>]"
         )
     query = urllib.parse.parse_qs(parsed.query)
+    if parts[1] == "r" and len(parts) >= 6:
+        # formato sem nomes legíveis: /docs/r/<loio do documento>/<versão>/<idioma>/<loio do tópico>.html
+        return HelpDoc(
+            product="r", deliverable=parts[2], topic=parts[5].removesuffix(".html"), version=parts[3], locale=parts[4]
+        )
     topic = parts[3] if len(parts) > 3 else ""
     return HelpDoc(
         product=parts[1],
@@ -106,6 +111,8 @@ class Deliverable:
     title: str
     toc: list[dict]
     readable: dict[str, str]  # loio do tópico → trecho legível da URL
+    topic_file: str = ""  # arquivo do tópico da URL (ou da página inicial do documento)
+    path: str = ""  # <produto>/<documento> legíveis, para os links (o formato /docs/r/ não tem nomes)
 
 
 def load_deliverable(client: HelpPortalClient, doc: HelpDoc) -> Deliverable:
@@ -135,14 +142,27 @@ def load_deliverable(client: HelpPortalClient, doc: HelpDoc) -> Deliverable:
             "file_path": meta["filePath"],
         },
     )
-    mapping = (meta.get("readableUrls") or {}).get("tocReadableUrlMapping") or []
+    readable_urls = meta.get("readableUrls") or {}
+    mapping = readable_urls.get("tocReadableUrlMapping") or []
+    product = readable_urls.get("productReadableUrl") or deliverable.get("product") or doc.product
     return Deliverable(
         id=deliverable["id"],
         build=deliverable["buildNo"],
         title=page["deliverable"].get("title") or deliverable.get("productName") or doc.deliverable,
         toc=page["deliverable"].get("fullToc") or [],
         readable={m["loio"]: m["url"] for m in mapping if m.get("loio") and m.get("url")},
+        topic_file=meta["filePath"],
+        path=f"{product}/{readable_urls.get('deliverableReadableUrl') or doc.deliverable}",
     )
+
+
+def subtree(items: list[TocItem], topic_file: str) -> list[TocItem]:
+    """Só o tópico da URL e o que está abaixo dele no sumário (para levar um cenário, não o documento inteiro)."""
+    root = next((i for i in items if i.file == topic_file), None)
+    if root is None:
+        raise LookupError(f"o tópico da URL ({topic_file}) não está no sumário do documento")
+    size = len(root.positions)
+    return [i for i in items if i.positions[:size] == root.positions]
 
 
 @dataclass
@@ -203,6 +223,7 @@ def extract_help(
     *,
     only: str | None = None,
     limit: int | None = None,
+    subtree_only: bool = False,
     client: HelpPortalClient | None = None,
 ) -> RunReport:
     ensure_allowed(url, config)
@@ -216,13 +237,24 @@ def extract_help(
         deliverable.build,
         len(deliverable.toc),
     )
-    course = course_dir(config, doc.url, config.course_name or deliverable.title)
+    doc_url = f"{BASE}/docs/{deliverable.path}"
+    items = list(enumerate(walk(deliverable.toc), 1))
+    name, identity = deliverable.title, f"{doc_url}?version={doc.version}&locale={doc.locale}"
+    if subtree_only:
+        # cada tópico pedido vira a sua própria pasta (documento — tópico), identificada pela URL do tópico
+        keep = subtree([item for _, item in items], deliverable.topic_file)
+        items = [(index, item) for index, item in items if item in keep]
+        topic = deliverable.readable.get(keep[0].file.removesuffix(".html"), keep[0].file.removesuffix(".html"))
+        name = f"{deliverable.title} - {keep[0].titles[-1]}"
+        identity = f"{doc_url}/{topic}?version={doc.version}&locale={doc.locale}"
+        log.info("só o tópico %s e os %s abaixo dele", keep[0].path_text, len(keep) - 1)
+    course = course_dir(config, identity, config.course_name or name)
     out = course / datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
     out.mkdir(exist_ok=True)
     log.info("extração em %s", out)
-    report = RunReport(url=doc.url, started_at=datetime.now(UTC).isoformat(timespec="seconds"), output=str(out))
+    report = RunReport(url=identity, started_at=datetime.now(UTC).isoformat(timespec="seconds"), output=str(out))
 
-    for index, item in enumerate(walk(deliverable.toc), 1):
+    for index, item in items:
         if only and not re.search(only, item.path_text, re.IGNORECASE):
             continue
         if not item.file:
@@ -242,7 +274,7 @@ def extract_help(
             if not markdown.strip():
                 raise ValueError("página sem conteúdo")
             loio = item.file.removesuffix(".html")
-            source = f"{BASE}/docs/{doc.product}/{doc.deliverable}/{deliverable.readable.get(loio, loio)}?version={doc.version}"
+            source = f"{doc_url}/{deliverable.readable.get(loio, loio)}?version={doc.version}"
             relative = item.relative_file()
             target = out / relative
             target.parent.mkdir(parents=True, exist_ok=True)

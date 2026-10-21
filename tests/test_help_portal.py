@@ -177,3 +177,31 @@ def test_respeita_o_robots_sem_autorizacao(tmp_path, monkeypatch):
     monkeypatch.setattr("spa_content_extractor.help_portal.ensure_allowed", disallow)
     with pytest.raises(PermissionError):
         extract_help(config, URL, client=FakePortal())
+
+
+def test_le_a_url_no_formato_r():
+    doc = parse_url(
+        "https://help.sap.com/docs/r/6d6d63354d1242d185ab4830fc04feb1/Cloud/en-US/33832e58695345eea2cd91a2cc8ab24c.html"
+    )
+    assert (doc.product, doc.deliverable, doc.topic, doc.version, doc.locale) == (
+        "r",
+        "6d6d63354d1242d185ab4830fc04feb1",
+        "33832e58695345eea2cd91a2cc8ab24c",
+        "Cloud",
+        "en-US",
+    )
+
+
+def test_subtree_leva_so_o_topico_da_url_e_os_filhos(tmp_path):
+    # a URL abre "Initial Setup" (filePath = setup.html): só ele e o que está abaixo dele, numa pasta própria
+    report = extract_help(config_for(tmp_path), URL, subtree_only=True, client=FakePortal())
+    assert [i["path"] for i in report.items] == [
+        "Initial Setup",
+        "Initial Setup › Enabling the Service in Cloud Foundry",
+        "Initial Setup › Enabling the Service in Cloud Foundry › Create a Service Key",
+        "Initial Setup › Enabling the Service in the Kyma Environment",
+    ]
+    out = Path(report.output)
+    assert out.parent.name == "00-sap-ai-core-service-guide-initial-setup"
+    assert report.url.startswith("https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide/initial-setup?")
+    assert (out / "03-initial-setup/00-initial-setup.md").exists()  # numeração do documento inteiro, para o contexto
