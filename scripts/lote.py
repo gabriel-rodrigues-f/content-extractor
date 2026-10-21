@@ -10,23 +10,34 @@ Parâmetros de uma linha vão depois da URL e valem só para ela, ex.: "- [ ] <u
 page, o resto → extract.
 
 Outras marcas são ignoradas pelo lote e ficam no arquivo: "[~]" = na fila, aguardando um adaptador do extrator;
-"[-]" = pulado de propósito (o motivo vai depois do " — ").
+"[-]" = pulado de propósito (o motivo vai depois do " — "); "[>]" = em andamento por um lote (com o pid — se esse
+processo não existe mais, o item volta a ser pendente).
 
-Uso, na pasta do projeto:  uv run python scripts/lote.py [--dry]
+Vários ao mesmo tempo: --workers N roda até N itens em paralelo, nunca dois do mesmo site (host) — cada site continua
+recebendo uma requisição por vez. --groups REGEX limita aos grupos cujo título bate. O STATUS.md é relido e gravado sob
+trava a cada resultado.
+
+Uso, na pasta do projeto:  uv run python scripts/lote.py [--dry] [--workers N] [--groups REGEX]
 """
 
 from __future__ import annotations
 
+import argparse
+import fcntl
+import itertools
 import json
+import os
 import re
 import shlex
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
+from urllib.parse import urlparse
 
 from spa_content_extractor.config import load_config
-from spa_content_extractor.extractor import _numbered
+from spa_content_extractor.extractor import _numbered, slugify
 
 DONE = " — concluído"
 
@@ -36,6 +47,8 @@ class SessionExpired(Exception):
 
 
 ITEM = re.compile(r"^- \[( |x|!)\] (\S+)(.*)$")
+MARK = re.compile(r"^- \[(.)\] ")
+CLAIM = re.compile(r"^- \[>\] (\S+)(.*) — em andamento \(pid (\d+)\)$")
 RESULT = re.compile(r"(\d+)/(\d+) item\(ns\) extraído\(s\) em (.+)$")
 
 
@@ -82,23 +95,20 @@ def line_args(rest: str) -> str:
     return rest.split(" — ", 1)[0].strip()
 
 
+COMMANDS = {"extract", "help", "page", "site"}
+
+
 def extract(output: Path, url: str, group: str, args: str = "") -> tuple[bool, str]:
     logs = output / ".logs"
     logs.mkdir(exist_ok=True)
-    log = logs / f"{url.rstrip('/').rsplit('/', 1)[-1]}.log"
+    parsed = urlparse(url)
+    log = logs / f"{slugify(parsed.netloc + parsed.path, 120)}.log"
+    tokens = shlex.split(args)
+    # o comando sai da URL, a menos que a linha diga qual (ex.: "<url> site --delay 1")
+    command = tokens.pop(0) if tokens and tokens[0] in COMMANDS else command_for(url)
     with log.open("w", encoding="utf-8") as handle:
         code = subprocess.run(
-            # documento do SAP Help Portal: comando próprio (sumário pela API do portal); o resto, curso
-            [
-                sys.executable,
-                "-m",
-                "spa_content_extractor.cli",
-                command_for(url),
-                url,
-                "--group",
-                group,
-                *shlex.split(args),
-            ],
+            [sys.executable, "-m", "spa_content_extractor.cli", command, url, "--group", group, *tokens],
             stdout=handle,
             stderr=subprocess.STDOUT,
             check=False,
@@ -115,57 +125,148 @@ def extract(output: Path, url: str, group: str, args: str = "") -> tuple[bool, s
     return False, (reason.group(1) if reason else f"saída {code}, veja {log.relative_to(output)}")[:200]
 
 
-def main() -> int:
-    dry = "--dry" in sys.argv
-    output = load_config(None).output_dir
-    status = output / "STATUS.md"
-    lines = status.read_text(encoding="utf-8").splitlines()
+class Status:
+    """O STATUS.md compartilhado pelos workers: cada gravação relê o arquivo sob trava e troca só a linha do item."""
 
-    def save() -> None:
-        status.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.lock = threading.Lock()
 
-    group, header_at, pending = None, None, 0
-    for index in range(len(lines) + 1):
-        line = lines[index] if index < len(lines) else "## "
+    def read(self) -> list[str]:
+        return self.path.read_text(encoding="utf-8").splitlines()
+
+    def update(self, old: str, new: str) -> None:
+        with self.lock, self.path.open("r+", encoding="utf-8") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            lines = handle.read().splitlines()
+            if old in lines:
+                lines[lines.index(old)] = new
+            lines = mark_groups(lines)
+            handle.seek(0)
+            handle.write("\n".join(lines) + "\n")
+            handle.truncate()
+
+
+def mark_groups(lines: list[str]) -> list[str]:
+    """Põe " — concluído" no título do grupo cujos itens estão todos resolvidos: [x] ou [-] (pulado de propósito).
+    Item na fila [~], pendente ou com falha deixa o grupo aberto."""
+    headers = [i for i, line in enumerate(lines) if line.startswith("## ")] + [len(lines)]
+    for start, end in itertools.pairwise(headers):
+        states = [m.group(1) for m in (MARK.match(x) for x in lines[start + 1 : end]) if m]
+        if "x" in states and all(s in "x-" for s in states) and not lines[start].endswith(DONE):
+            lines[start] += DONE
+            print(f"■ grupo concluído: {lines[start][3:].removesuffix(DONE)}", flush=True)
+    return lines
+
+
+def pending_items(lines: list[str], groups: str | None) -> list[tuple[str, str, str, str]]:
+    """(grupo, linha, url, parâmetros) de cada item a fazer, na ordem do arquivo."""
+    items, group = [], None
+    for line in lines:
         if line.startswith("## "):
-            if group is not None and header_at is not None and not dry:
-                items = [ITEM.match(x) for x in lines[header_at + 1 : index]]
-                states = [m.group(1) for m in items if m]
-                if states and all(s == "x" for s in states) and not lines[header_at].endswith(DONE):
-                    lines[header_at] += DONE
-                    save()
-                    print(f"■ grupo concluído: {group}", flush=True)
             group = line[3:].removesuffix(DONE).strip() or None
-            header_at = index
+            continue
+        if groups and group and not re.search(groups, group, re.IGNORECASE):
+            continue
+        claim = CLAIM.match(line)
+        if claim and group and not alive(int(claim.group(3))):
+            items.append((group, line, claim.group(1), claim.group(2).strip()))  # lote que morreu no meio: refaz
             continue
         match = ITEM.match(line)
         if not match or group is None or match.group(1) == "x":
             continue
-        url, args = match.group(2), line_args(match.group(3))
-        pending += 1
-        if dry:
+        items.append((group, line, match.group(2), line_args(match.group(3))))
+    return items
+
+
+def alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def run_item(output: Path, group: str, url: str, args: str) -> tuple[bool, str]:
+    group_dir = _numbered(output, group)
+    # com parâmetros (--only, --subtree…) a extração é parcial: não vale como cópia de outra
+    source = None if args else latest_extraction(output, url)
+    if source is not None and source.parent.parent != group_dir:
+        target = copy_into(output, source, group_dir)
+        return True, f"copiado de {source.relative_to(output)} → {target.relative_to(output)}"
+    if source is not None:
+        return True, f"já extraído · {source.relative_to(output)}"
+    return extract(output, url, group, args)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Roda as extrações pendentes do STATUS.md.")
+    parser.add_argument("--dry", action="store_true", help="só lista o que está pendente")
+    parser.add_argument("--workers", type=int, default=1, help="itens em paralelo, nunca dois do mesmo site")
+    parser.add_argument("--groups", help="regex no título dos grupos a rodar")
+    options = parser.parse_args()
+    output = load_config(None).output_dir
+    status = Status(output / "STATUS.md")
+    queue = pending_items(status.read(), options.groups)
+    if options.dry:
+        for group, _, url, args in queue:
             print(f"{group} · {url}{' ' + args if args else ''}")
-            continue
-        group_dir = _numbered(output, group)
-        # com parâmetros (--only, --subtree) a extração é parcial: não vale como cópia de outra
-        source = None if args else latest_extraction(output, url)
-        if source is not None and source.parent.parent != group_dir:
-            target = copy_into(output, source, group_dir)
-            ok, note = True, f"copiado de {source.relative_to(output)} → {target.relative_to(output)}"
-        elif source is not None:
-            ok, note = True, f"já extraído · {source.relative_to(output)}"
-        else:
+        print(f"pendentes: {len(queue)}", flush=True)
+        return 0
+
+    busy: set[str] = set()
+    stopped: dict[str, str] = {}  # host → motivo (sessão expirada: o resto daquele site falharia igual)
+    changed = threading.Condition()
+    processed = 0
+
+    def take() -> tuple[str, str, str, str] | None:
+        with changed:
+            while True:
+                queue[:] = [item for item in queue if urlparse(item[2]).netloc not in stopped]
+                free = next((item for item in queue if urlparse(item[2]).netloc not in busy), None)
+                if free is not None:
+                    queue.remove(free)
+                    busy.add(urlparse(free[2]).netloc)
+                    return free
+                if not queue:
+                    return None
+                changed.wait()
+
+    def worker() -> None:
+        nonlocal processed
+        while (item := take()) is not None:
+            group, line, url, args = item
+            host = urlparse(url).netloc
+            claimed = f"- [>] {url}{' ' + args if args else ''} — em andamento (pid {os.getpid()})"
+            status.update(line, claimed)  # outro lote rodando ao mesmo tempo não pega este item
+            line = claimed
             try:
-                ok, note = extract(output, url, group, args)
+                ok, note = run_item(output, group, url, args)
+                status.update(line, f"- [{'x' if ok else '!'}] {url}{' ' + args if args else ''} — {note}")
+                print(f"{'✓' if ok else '✗'} {group} · {url} · {note}", flush=True)
             except SessionExpired as error:
-                # todo o resto falharia igual: para o lote sem marcar nada; depois do login, rodar de novo retoma daqui
-                print(f"■ lote parado: {error}", flush=True)
-                return 4
-        lines[index] = f"- [{'x' if ok else '!'}] {url}{' ' + args if args else ''} — {note}"
-        save()
-        print(f"{'✓' if ok else '✗'} {group} · {url.rsplit('/', 1)[-1]} · {note}", flush=True)
-    print(f"{'pendentes' if dry else 'processados'}: {pending}", flush=True)
-    return 0
+                # volta a pendente: depois do login, rodar de novo retoma daqui
+                status.update(line, f"- [ ] {url}{' ' + args if args else ''}")
+                stopped[host] = str(error)
+                print(f"■ {host} parado: {error}", flush=True)
+            except Exception as error:  # noqa: BLE001 — um item com erro inesperado não derruba os outros workers
+                status.update(line, f"- [!] {url}{' ' + args if args else ''} — erro no lote: {type(error).__name__}")
+                print(f"✗ {group} · {url} · erro no lote: {error}", flush=True)
+            finally:
+                with changed:
+                    busy.discard(host)
+                    processed += 1
+                    changed.notify_all()
+
+    threads = [threading.Thread(target=worker) for _ in range(max(1, options.workers))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    print(f"processados: {processed}", flush=True)
+    return 4 if stopped else 0
 
 
 if __name__ == "__main__":

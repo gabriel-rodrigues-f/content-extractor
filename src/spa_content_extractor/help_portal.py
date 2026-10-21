@@ -54,6 +54,9 @@ class HelpDoc:
 def parse_url(url: str) -> HelpDoc:
     parsed = urllib.parse.urlparse(url)
     parts = [p for p in parsed.path.split("/") if p]
+    if parts[:1] == ["viewer"] and len(parts) >= 5:
+        # formato antigo: /viewer/<loio do documento>/<versão>/<idioma>/<loio do tópico>.html — o mesmo do /docs/r/
+        parts = ["docs", "r", *parts[1:]]
     if parsed.hostname != "help.sap.com" or len(parts) < 3 or parts[0] != "docs":
         raise LookupError(
             "use uma URL de documento do Help Portal: https://help.sap.com/docs/<produto>/<documento>[/<tópico>]"

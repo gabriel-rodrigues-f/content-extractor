@@ -26,7 +26,8 @@ log = logging.getLogger(__name__)
 USER_AGENT = "spa-content-extractor"
 # Onde costuma estar o artigo; vence o menor que tem ao menos SHARE do texto do maior. selectors.content_container no
 # extractor.toml substitui a lista.
-CANDIDATES = "article, [role=main], main, main div.content"
+# #main-col-body: guias da AWS; .devsite-article-body: developers.google.com e docs.cloud.google.com
+CANDIDATES = "article, [role=main], main, main div.content, #main-col-body, .devsite-article-body"
 SHARE = 0.6
 
 
@@ -47,6 +48,8 @@ def fetch(url: str, retries: int = 3) -> str:
 def article(html: str, config: Config) -> tuple[str, str]:
     """(título, HTML do corpo do artigo)."""
     soup = BeautifulSoup(html, "html.parser")
+    for permalink in soup.select("a.headerlink"):
+        permalink.decompose()  # "¶" do Sphinx ao lado de cada título (d2l.ai, scikit-learn)
     candidates = soup.select(config.selectors.content_container or CANDIDATES) or [soup.body or soup]
     sizes = [(len(c.get_text(" ", strip=True)), c) for c in candidates]
     biggest = max(size for size, _ in sizes)

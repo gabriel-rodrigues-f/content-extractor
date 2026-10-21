@@ -42,3 +42,21 @@ def test_grava_a_pagina_no_layout_dos_cursos(tmp_path, monkeypatch):
     assert text.split("---\n\n", 1)[1].startswith("# Scenario - Entra ID and SAP")  # título do cabeçalho vem junto
     assert "```json" in text and "## Recommendations" in text
     assert report.items[0]["status"] == "ok"
+
+
+def test_guia_da_aws_e_titulos_do_sphinx():
+    aws = (
+        "<html><head><title>Quickstart - Amazon Bedrock</title></head><body><div class='awsdocs-container'>"
+        "<p><a href='x.md'>View a markdown version of this page</a></p><div id='main'>"
+        "<div id='main-col-body'><h1>Quickstart</h1><p>Get started with Amazon Bedrock in minutes.</p></div>"
+        "<div id='page-toc-src'><a href='#next'>Next steps</a></div></div></div></body></html>"
+    )
+    title, body = article(aws, Config())
+    assert (
+        title == "Quickstart" and "Get started" in body and "markdown version" not in body and "Next steps" not in body
+    )
+    sphinx = (
+        '<html><body><main><h1>Installation<a class="headerlink" href="#i">¶</a></h1><p>pip</p></main></body></html>'
+    )
+    title, body = article(sphinx, Config())
+    assert title == "Installation" and "¶" not in body

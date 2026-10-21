@@ -192,6 +192,18 @@ def test_le_a_url_no_formato_r():
     )
 
 
+def test_le_a_url_no_formato_viewer():
+    doc = parse_url(
+        "https://help.sap.com/viewer/65de2977205c403bbc107264b8eccf4b/Cloud/en-US/30ece35bac024ca69de8b16bff79c413.html"
+    )
+    assert (doc.product, doc.deliverable, doc.topic, doc.version) == (
+        "r",
+        "65de2977205c403bbc107264b8eccf4b",
+        "30ece35bac024ca69de8b16bff79c413",
+        "Cloud",
+    )
+
+
 def test_subtree_leva_so_o_topico_da_url_e_os_filhos(tmp_path):
     # a URL abre "Initial Setup" (filePath = setup.html): só ele e o que está abaixo dele, numa pasta própria
     report = extract_help(config_for(tmp_path), URL, subtree_only=True, client=FakePortal())

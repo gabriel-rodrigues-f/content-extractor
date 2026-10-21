@@ -1,4 +1,4 @@
-"""CLI `spa-extract`: login · map · extract · help · page · format."""
+"""CLI `spa-extract`: login · map · extract · help · page · site · format."""
 
 from __future__ import annotations
 
@@ -73,6 +73,20 @@ def _parser() -> argparse.ArgumentParser:
     pg.add_argument("url")
     pg.add_argument("--name", help="nome da pasta (padrão: título da página)")
     pg.add_argument("--group", help='pasta que agrupa páginas (ex.: "entra-id" → output/NN-entra-id/NN-<página>/)')
+
+    st = sub.add_parser(
+        "site", help="extrai um site de documentação estático (ou uma seção), pelo sumário em JSON, sitemap ou links"
+    )
+    st.add_argument("url", help="página inicial; o prefixo padrão é a pasta dela")
+    st.add_argument("--prefix", help="só URLs que começam com isto (padrão: a pasta da URL inicial)")
+    st.add_argument("--only", help="regex no caminho/URL das páginas a gravar")
+    st.add_argument("--limit", type=int, help="no máximo N páginas novas (teste)")
+    st.add_argument("--max-pages", type=int, default=20000, help="teto de segurança (padrão 20000)")
+    st.add_argument("--delay", type=float, help="pausa média entre páginas em segundos (padrão: [timing] do toml)")
+    st.add_argument("--resume", action="store_true", help="continua a extração mais recente, pulando o que está ok")
+    st.add_argument("--content", help="seletor CSS do corpo do artigo (padrão: detecção automática)")
+    st.add_argument("--name", help="nome da pasta (padrão: título da página inicial)")
+    st.add_argument("--group", help="pasta que agrupa sites")
 
     fmt = sub.add_parser("format", help="formata os .md brutos de uma execução com Claude no SAP AI Core")
     fmt.add_argument(
@@ -150,6 +164,24 @@ def _run(argv: list[str] | None) -> int:
         from .page import extract_page
 
         report = extract_page(config, args.url)
+        ok = sum(1 for i in report.items if i["status"] == "ok")
+        print(f"\n{ok}/{len(report.items)} item(ns) extraído(s) em {report.output}")
+        return 0 if ok == len(report.items) else 2
+
+    if args.command == "site":
+        from .site import extract_site
+
+        report = extract_site(
+            config,
+            args.url,
+            prefix=args.prefix,
+            only=args.only,
+            limit=args.limit,
+            max_pages=args.max_pages,
+            delay=args.delay,
+            resume=args.resume,
+            content=args.content,
+        )
         ok = sum(1 for i in report.items if i["status"] == "ok")
         print(f"\n{ok}/{len(report.items)} item(ns) extraído(s) em {report.output}")
         return 0 if ok == len(report.items) else 2
