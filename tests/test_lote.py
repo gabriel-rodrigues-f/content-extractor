@@ -18,6 +18,7 @@ def test_parametros_da_linha_e_comando_pela_url():
     )
     assert lote.line_args(lote.ITEM.match("- [ ] https://learning.sap.com/c").group(3)) == ""
     assert lote.command_for("https://help.sap.com/docs/btp/x") == "help"
+    assert lote.command_for("https://help.sap.com/viewer/65de/Cloud/en-US/30ec.html") == "help"
     assert lote.command_for("https://learn.microsoft.com/en-us/entra/x") == "page"
     assert lote.command_for("https://learning.sap.com/courses/x") == "extract"
     assert lote.command_for("https://learning.sap.com/live-sessions/x") == "page"

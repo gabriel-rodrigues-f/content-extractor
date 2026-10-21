@@ -83,7 +83,7 @@ def copy_into(output: Path, source: Path, group_dir: Path) -> Path:
 
 
 def command_for(url: str) -> str:
-    if "://help.sap.com/docs/" in url:
+    if "://help.sap.com/docs/" in url or "://help.sap.com/viewer/" in url:
         return "help"  # documento do SAP Help Portal: sumário pela API do portal
     if "://github.com/" in url:
         return "repo"  # repositório: clone raso, .md e notebooks
