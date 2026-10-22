@@ -64,7 +64,9 @@ def _title(markdown: str, fallback: str) -> str:
     return re.sub(r"\*\*|__|\*|`", "", heading.group(1)).strip() if heading else fallback
 
 
-def extract_repo(config: Config, url: str, *, path: str = "", include: str | None = None) -> RunReport:
+def extract_repo(
+    config: Config, url: str, *, path: str = "", include: str | None = None, assets: str | None = None
+) -> RunReport:
     parsed = urlparse(url)
     owner_repo = "/".join(parsed.path.strip("/").split("/")[:2])
     if parsed.hostname != "github.com" or owner_repo.count("/") != 1:
@@ -123,6 +125,17 @@ def extract_repo(config: Config, url: str, *, path: str = "", include: str | Non
                 entry.update(status="error", error=f"{type(error).__name__}: {error}")
                 log.warning("✗ %04d %s — %s", index, relative, error)
             report.items.append(entry)
+        if assets:
+            # arquivos que não viram nota mas acompanham o conteúdo (ex.: diagramas .drawio): copiados como estão
+            for asset in sorted(p for p in base.rglob("*") if p.is_file() and re.search(assets, p.name, re.IGNORECASE)):
+                relative = PurePosixPath(asset.relative_to(root).as_posix())
+                target = out / PurePosixPath(*[slugify(part, 60) for part in relative.parent.parts], asset.name)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(asset.read_bytes())
+                report.items.append(
+                    {"index": len(report.items) + 1, "path": str(relative), "status": "ok", "asset": True}
+                )
+                log.info("✓ anexo %s", relative)
         report.save(out / "manifest.json")
     return report
 

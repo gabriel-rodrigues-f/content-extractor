@@ -101,6 +101,7 @@ def _parser() -> argparse.ArgumentParser:
     rp.add_argument("url", help="https://github.com/<dono>/<repositório>")
     rp.add_argument("--path", default="", help="só esta subpasta do repositório")
     rp.add_argument("--include", help="regex no caminho dos arquivos a converter")
+    rp.add_argument("--assets", help=r'regex no nome de arquivos a copiar como estão (ex.: "\.drawio$")')
     rp.add_argument("--name", help="nome da pasta (padrão: dono-repositório)")
     rp.add_argument("--group", help="pasta que agrupa fontes")
 
@@ -216,7 +217,7 @@ def _run(argv: list[str] | None) -> int:
         from .sources import extract_pdf, extract_repo
 
         report = (
-            extract_repo(config, args.url, path=args.path, include=args.include)
+            extract_repo(config, args.url, path=args.path, include=args.include, assets=args.assets)
             if args.command == "repo"
             else extract_pdf(config, args.url)
         )

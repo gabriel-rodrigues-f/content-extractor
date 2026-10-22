@@ -26,7 +26,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Self
-from urllib import robotparser
 from urllib.parse import urldefrag, urljoin, urlparse
 
 from bs4 import BeautifulSoup
@@ -35,7 +34,7 @@ from .config import Config
 from .content import strip_noise, to_markdown
 from .extractor import RunReport, course_dir, slugify
 from .page import article, fetch
-from .robots import USER_AGENT
+from .robots import USER_AGENT, RobotsRules
 
 log = logging.getLogger(__name__)
 
@@ -242,18 +241,17 @@ class _Robots:
     def __init__(self, start: str, config: Config) -> None:
         parsed = urlparse(start)
         self.authorized = config.authorized_hosts.get(parsed.hostname or "")
-        self.parser = robotparser.RobotFileParser()
-        self.text = ""
         try:
             self.text = fetch(f"{parsed.scheme}://{parsed.netloc}/robots.txt", retries=1)
-        except RuntimeError:
-            log.warning("robots.txt de %s indisponível; seguindo com ritmo educado", parsed.netloc)
-        self.parser.parse(self.text.splitlines())
-        delay = self.parser.crawl_delay(USER_AGENT)
-        self.crawl_delay = float(delay) if delay else 0.0  # ex.: a AWS pede 5 s
+        except RuntimeError:  # 4xx: sem restrições (RFC 9309); falha de rede: segue com ritmo educado
+            self.text = ""
+        if self.text.lstrip().lower().startswith(("<!doctype", "<html")):
+            self.text = ""  # site que devolve uma página no lugar do robots.txt (ex.: d2l.ai)
+        self.rules = RobotsRules.parse(self.text)
+        self.crawl_delay = self.rules.crawl_delay  # ex.: a AWS e o SAP Community pedem 5 s
 
     def allowed(self, url: str) -> bool:
-        return bool(self.authorized) or self.parser.can_fetch(USER_AGENT, url)
+        return bool(self.authorized) or self.rules.allowed(url)
 
 
 def _latest_run(course: Path) -> Path | None:

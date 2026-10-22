@@ -42,17 +42,20 @@ def test_repositorio_mantem_as_pastas(tmp_path, monkeypatch):
             (target / "README.md").write_text("# Courses\n\nWelcome.", encoding="utf-8")
             (target / "tool_use" / "01_intro.ipynb").write_text(json.dumps(NOTEBOOK), encoding="utf-8")
             (target / "tool_use" / "image.png").write_bytes(b"\x89PNG")
+            (target / "tool_use" / "flow.drawio").write_text("<mxfile/>", encoding="utf-8")
         return Result()
 
     monkeypatch.setattr("spa_content_extractor.sources.subprocess.run", fake_run)
     config = Config()
     config.output_dir = tmp_path / "output"
-    report = extract_repo(config, "https://github.com/anthropics/courses")
+    report = extract_repo(config, "https://github.com/anthropics/courses", assets=r"\.drawio$")
     out = Path(report.output)
     assert sorted(p.relative_to(out).as_posix() for p in out.rglob("*.md")) == ["readme.md", "tool-use/01-intro.md"]
     note = (out / "tool-use/01-intro.md").read_text(encoding="utf-8")
     assert 'title: "Tool use"' in note and 'module: "tool_use"' in note
     assert "source: https://github.com/anthropics/courses/blob/master/tool_use/01_intro.ipynb" in note
+    assert (out / "tool-use/flow.drawio").read_text(encoding="utf-8") == "<mxfile/>"  # anexo copiado
+    assert not (out / "tool-use/image.png").exists()  # só o que bate com --assets
 
 
 def test_titulo_mantem_underscore_de_nomes():
