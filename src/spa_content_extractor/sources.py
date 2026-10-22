@@ -92,13 +92,17 @@ def extract_repo(
             and not _NOTEBOOK_SKIP.search(p.relative_to(root).as_posix())
             and (not include or re.search(include, p.relative_to(root).as_posix(), re.IGNORECASE))
         )
-        name = config.course_name or owner_repo.replace("/", "-")
-        course = course_dir(config, f"https://github.com/{owner_repo}", name)
+        suffix = f"-{PurePosixPath(path.strip('/')).name}" if path else ""
+        name = config.course_name or owner_repo.replace("/", "-") + suffix
+        # com --path, a fonte é a subpasta: dois trechos do mesmo repositório (ex.: RA0009 e RA0018 do Architecture
+        # Center) não podem cair na mesma pasta
+        identity = f"https://github.com/{owner_repo}" + (f"/tree/HEAD/{path.strip('/')}" if path else "")
+        course = course_dir(config, identity, name)
         out = course / datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
         out.mkdir(exist_ok=True)
         log.info("extração em %s (%s arquivos; licença: %s)", out, len(files), license_text or "não declarada")
         report = RunReport(
-            url=f"https://github.com/{owner_repo}",
+            url=identity,
             started_at=datetime.now(UTC).isoformat(timespec="seconds"),
             output=str(out),
         )
@@ -140,7 +144,46 @@ def extract_repo(
     return report
 
 
-def extract_pdf(config: Config, url: str) -> RunReport:
+def pdf_sections(reader, pages: list[str], max_depth: int) -> list[tuple[tuple[str, ...], tuple[int, ...], str]]:
+    """Seções do PDF pelos marcadores (sumário embutido) até max_depth: (títulos, posições, texto). Vários marcadores
+    podem começar na mesma página, então o corte é feito onde o título aparece no texto, não no início da página."""
+    flat: list[tuple[int, str, int]] = []
+
+    def walk(items, depth):
+        for item in items:
+            if isinstance(item, list):
+                walk(item, depth + 1)
+            elif depth <= max_depth:
+                try:
+                    flat.append((depth, item.title.strip(), reader.get_destination_page_number(item)))
+                except Exception as error:  # noqa: BLE001 — marcador sem destino válido
+                    log.debug("marcador ignorado (%s): %s", type(error).__name__, getattr(item, "title", "?"))
+
+    walk(reader.outline, 0)
+    flat = [f for f in flat if f[1].lower() not in {"contents", "table of contents", "sumário"}]
+    offsets, text = [], ""
+    for page in pages:
+        offsets.append(len(text))
+        text += page + "\n\n"
+    cuts = []
+    for depth, title, page in flat:
+        begin = offsets[page] if page < len(offsets) else len(text)
+        found = text.lower().find(title.lower()[:60], begin, begin + 6000 if page < len(offsets) else begin)
+        cuts.append(max(found if found >= 0 else begin, cuts[-1] if cuts else 0))
+    sections, stack, counters = [], [], {}
+    for i, (depth, title, _) in enumerate(flat):
+        stack = stack[:depth]
+        parent = tuple(n for _, n in stack)
+        counters[parent] = counters.get(parent, 0) + 1
+        stack.append((title, counters[parent]))
+        body = text[cuts[i] : cuts[i + 1] if i + 1 < len(cuts) else len(text)].strip()
+        sections.append((tuple(t for t, _ in stack), tuple(n for _, n in stack), body))
+    return sections
+
+
+def extract_pdf(config: Config, url: str, *, split_depth: int | None = None) -> RunReport:
+    """Texto do PDF numa nota; com split_depth, uma nota por seção do sumário embutido (até esse nível), em pastas por
+    capítulo — para guias de centenas de páginas."""
     import urllib.request
 
     from pypdf import PdfReader
@@ -158,8 +201,31 @@ def extract_pdf(config: Config, url: str) -> RunReport:
     out = course / datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
     out.mkdir(exist_ok=True)
     report = RunReport(url=url, started_at=datetime.now(UTC).isoformat(timespec="seconds"), output=str(out))
+    sections = pdf_sections(reader, pages, split_depth) if split_depth is not None and reader.outline else []
+    if sections:
+        has_children = {titles[:-1] for titles, _, _ in sections if len(titles) > 1}
+        for index, (titles, positions, body) in enumerate(sections, 1):
+            entry: dict = {"index": index, "path": " › ".join(titles), "title": titles[-1]}
+            parts = [f"{n:02d}-{slugify(t, 50)}" for n, t in zip(positions, titles, strict=True)]
+            relative = (
+                PurePosixPath(*parts, f"00-{slugify(titles[-1], 50)}.md")
+                if titles in has_children
+                else PurePosixPath(*parts[:-1], f"{parts[-1]}.md")
+            )
+            if len(body.split()) < 3:
+                entry.update(status="error", error="ValueError: seção sem texto")
+            else:
+                (out / relative).parent.mkdir(parents=True, exist_ok=True)
+                (out / relative).write_text(
+                    _front(titles[-1], url, " › ".join(titles[:-1])) + f"# {titles[-1]}\n\n{body}\n", encoding="utf-8"
+                )
+                entry.update(status="ok", file=str(relative), chars=len(body))
+            report.items.append(entry)
+        log.info("✓ %s: %s seções do sumário (%s páginas)", title, len(sections), len(pages))
+        report.save(out / "manifest.json")
+        return report
     body = "\n\n".join(f"<!-- página {n} -->\n\n{text}" for n, text in enumerate(pages, 1) if text)
-    entry: dict = {"index": 1, "path": title, "title": title, "status": "pending"}
+    entry = {"index": 1, "path": title, "title": title, "status": "pending"}
     if body.strip():
         relative = f"01-{slugify(title, 60)}.md"
         (out / relative).write_text(_front(title, url) + f"# {title}\n\n{body}\n", encoding="utf-8")
@@ -169,5 +235,87 @@ def extract_pdf(config: Config, url: str) -> RunReport:
         entry.update(status="error", error="ValueError: PDF sem texto extraível (digitalizado?)")
         log.warning("✗ %s — PDF sem texto extraível", title)
     report.items.append(entry)
+    report.save(out / "manifest.json")
+    return report
+
+
+def _zendesk_get(url: str) -> dict:
+    import urllib.request
+
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+    with urllib.request.urlopen(request, timeout=60) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _zendesk_all(url: str, key: str, pause: float) -> list[dict]:
+    """Todas as páginas de uma listagem da API do Zendesk (segue next_page)."""
+    import time
+
+    items: list[dict] = []
+    while url:
+        data = _zendesk_get(url)
+        items.extend(data.get(key, []))
+        url = data.get("next_page")
+        if url:
+            time.sleep(pause)
+    return items
+
+
+def extract_zendesk(
+    config: Config, url: str, *, sections: str | None = None, list_only: bool = False, pause: float = 1.5
+) -> RunReport | None:
+    """Central de ajuda Zendesk (…/hc/<idioma>) pela API JSON pública do Help Center — útil quando o HTML está atrás
+    de desafio anti-bot e o robots.txt libera /api/v2/help_center. `sections` filtra as seções pelo nome."""
+    import time
+
+    from .content import strip_noise, to_markdown
+
+    parsed = urlparse(url)
+    match = re.search(r"/hc/([^/]+)", parsed.path)
+    locale = match.group(1) if match else "en-us"
+    api = f"{parsed.scheme}://{parsed.netloc}/api/v2/help_center/{locale}"
+    ensure_allowed(f"{api}/sections.json", config)
+    categories = {c["id"]: c["name"] for c in _zendesk_all(f"{api}/categories.json?per_page=100", "categories", pause)}
+    all_sections = _zendesk_all(f"{api}/sections.json?per_page=100", "sections", pause)
+    chosen = [s for s in all_sections if not sections or re.search(sections, s["name"], re.IGNORECASE)]
+    if list_only:
+        for s in chosen:
+            print(f"{categories.get(s.get('category_id'), '?')} › {s['name']}  ({s['html_url']})")
+        print(f"{len(chosen)} de {len(all_sections)} seções")
+        return None
+    name = config.course_name or parsed.netloc
+    course = course_dir(config, url, name)
+    out = course / datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
+    out.mkdir(exist_ok=True)
+    report = RunReport(url=url, started_at=datetime.now(UTC).isoformat(timespec="seconds"), output=str(out))
+    category_numbers: dict[int, int] = {}
+    for section_number, section in enumerate(chosen, 1):
+        time.sleep(pause)
+        articles = _zendesk_all(f"{api}/sections/{section['id']}/articles.json?per_page=100", "articles", pause)
+        category = categories.get(section.get("category_id"), "geral")
+        number = category_numbers.setdefault(section.get("category_id"), len(category_numbers) + 1)
+        folder = PurePosixPath(
+            f"{number:02d}-{slugify(category, 50)}", f"{section_number:02d}-{slugify(section['name'], 60)}"
+        )
+        for index, article in enumerate(sorted(articles, key=lambda a: a.get("position", 0)), 1):
+            entry: dict = {
+                "index": len(report.items) + 1,
+                "path": f"{category} › {section['name']} › {article['title']}",
+            }
+            markdown = to_markdown(strip_noise(article.get("body") or "", config))
+            if not markdown.strip():
+                entry.update(status="error", error="ValueError: artigo sem conteúdo")
+            else:
+                relative = folder / f"{index:02d}-{slugify(article['title'], 60)}.md"
+                (out / relative).parent.mkdir(parents=True, exist_ok=True)
+                (out / relative).write_text(
+                    _front(article["title"], article["html_url"], f"{category} › {section['name']}")
+                    + f"# {article['title']}\n\n{markdown}",
+                    encoding="utf-8",
+                )
+                entry.update(status="ok", file=str(relative), chars=len(markdown))
+                log.info("✓ %s", entry["path"])
+            report.items.append(entry)
+        report.save(out / "manifest.json")
     report.save(out / "manifest.json")
     return report

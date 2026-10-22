@@ -99,7 +99,7 @@ def line_args(rest: str) -> str:
     return rest.split(" — ", 1)[0].strip()
 
 
-COMMANDS = {"extract", "help", "page", "site", "repo", "pdf"}
+COMMANDS = {"extract", "help", "page", "site", "repo", "pdf", "zendesk"}
 
 
 def extract(output: Path, url: str, group: str, args: str = "") -> tuple[bool, str]:

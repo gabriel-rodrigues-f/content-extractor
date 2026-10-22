@@ -105,9 +105,22 @@ def _parser() -> argparse.ArgumentParser:
     rp.add_argument("--name", help="nome da pasta (padrão: dono-repositório)")
     rp.add_argument("--group", help="pasta que agrupa fontes")
 
+    zd = sub.add_parser("zendesk", help="central de ajuda Zendesk pela API JSON pública (…/hc/<idioma>)")
+    zd.add_argument("url", help="ex.: https://suporte.exemplo.com/hc/pt-br")
+    zd.add_argument("--sections", help="regex no nome das seções a extrair")
+    zd.add_argument("--list", action="store_true", help="só lista as seções que casam, sem baixar artigos")
+    zd.add_argument("--name", help="nome da pasta (padrão: o host)")
+    zd.add_argument("--group", help="pasta que agrupa fontes")
+
     pdf = sub.add_parser("pdf", help="documento PDF (paper, guia): o texto vira uma nota")
     pdf.add_argument("url")
     pdf.add_argument("--name", help="título/nome da pasta (padrão: título do PDF)")
+    pdf.add_argument(
+        "--split",
+        type=int,
+        metavar="NÍVEL",
+        help="uma nota por seção do sumário embutido do PDF, até este nível (0 = capítulos; 2 = até subseções)",
+    )
     pdf.add_argument("--group", help="pasta que agrupa fontes")
 
     fmt = sub.add_parser("format", help="formata os .md brutos de uma execução com Claude no SAP AI Core")
@@ -213,13 +226,23 @@ def _run(argv: list[str] | None) -> int:
         print(f"\n{ok}/{len(report.items)} item(ns) extraído(s) em {report.output}")
         return 0 if ok == len(report.items) else 2
 
+    if args.command == "zendesk":
+        from .sources import extract_zendesk
+
+        report = extract_zendesk(config, args.url, sections=args.sections, list_only=args.list)
+        if report is None:
+            return 0
+        ok = sum(1 for i in report.items if i["status"] == "ok")
+        print(f"\n{ok}/{len(report.items)} item(ns) extraído(s) em {report.output}")
+        return 0 if ok == len(report.items) else 2
+
     if args.command in {"repo", "pdf"}:
         from .sources import extract_pdf, extract_repo
 
         report = (
             extract_repo(config, args.url, path=args.path, include=args.include, assets=args.assets)
             if args.command == "repo"
-            else extract_pdf(config, args.url)
+            else extract_pdf(config, args.url, split_depth=args.split)
         )
         ok = sum(1 for i in report.items if i["status"] == "ok")
         print(f"\n{ok}/{len(report.items)} item(ns) extraído(s) em {report.output}")
