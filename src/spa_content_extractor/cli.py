@@ -58,6 +58,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     hlp.add_argument("url", help="https://help.sap.com/docs/<produto>/<documento>[/<tópico>]")
     hlp.add_argument("--only", help="regex no caminho dos itens do sumário")
+    hlp.add_argument(
+        "--images", action="store_true", help="baixa as figuras (prints, diagramas) para assets/ ao lado de cada nota"
+    )
     hlp.add_argument("--limit", type=int, help="no máximo N páginas (teste)")
     hlp.add_argument("--name", help="nome da pasta do documento (padrão: título do documento no portal)")
     hlp.add_argument("--group", help='pasta que agrupa documentos (ex.: "ai-core" → output/NN-ai-core/NN-<documento>/)')
@@ -190,7 +193,9 @@ def _run(argv: list[str] | None) -> int:
     if args.command == "help":
         from .help_portal import extract_help
 
-        report = extract_help(config, args.url, only=args.only, limit=args.limit, subtree_only=args.subtree)
+        report = extract_help(
+            config, args.url, only=args.only, limit=args.limit, subtree_only=args.subtree, images=args.images
+        )
         ok = sum(1 for i in report.items if i["status"] == "ok")
         print(f"\n{ok}/{len(report.items)} item(ns) extraído(s) em {report.output}")
         return 0 if ok == len(report.items) else 2

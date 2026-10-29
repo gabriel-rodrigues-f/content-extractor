@@ -22,7 +22,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from bs4 import BeautifulSoup
 
@@ -116,6 +116,8 @@ class Deliverable:
     readable: dict[str, str]  # loio do tópico → trecho legível da URL
     topic_file: str = ""  # arquivo do tópico da URL (ou da página inicial do documento)
     path: str = ""  # <produto>/<documento> legíveis, para os links (o formato /docs/r/ não tem nomes)
+    loio: str = ""  # id do documento (para baixar as imagens em /doc/<loio>/<versão>/<idioma>/<arquivo>)
+    version: str = ""  # versão resolvida pelo portal (ex.: CLOUD, 2608.500) — "LATEST" não vale para /doc/
 
 
 def load_deliverable(client: HelpPortalClient, doc: HelpDoc) -> Deliverable:
@@ -156,6 +158,8 @@ def load_deliverable(client: HelpPortalClient, doc: HelpDoc) -> Deliverable:
         readable={m["loio"]: m["url"] for m in mapping if m.get("loio") and m.get("url")},
         topic_file=meta["filePath"],
         path=urllib.parse.quote(f"{product}/{readable_urls.get('deliverableReadableUrl') or doc.deliverable}"),
+        loio=page["deliverable"].get("loio") or "",
+        version=page["deliverable"].get("version") or deliverable.get("version") or doc.version,
     )
 
 
@@ -220,6 +224,44 @@ def _front_matter(item: TocItem, source: str) -> str:
     )
 
 
+def download_images(soup, deliverable: Deliverable, doc: HelpDoc, assets: Path) -> int:
+    """Baixa as figuras da página (prints, diagramas) para assets/ ao lado da nota e aponta o <img> para lá.
+    Ícones do tema (themes/…) e imagens externas (http…) ficam de fora. Devolve quantas foram gravadas."""
+    count = 0
+    for el in soup.find_all("img"):
+        src = (el.get("src") or "").strip()
+        if not src or src.startswith(("http", "data:", "themes/")) or not deliverable.loio:
+            continue
+        name = PurePosixPath(src).name
+        if not re.search(r"\.(png|jpe?g|gif|svg|webp)$", name, re.IGNORECASE):
+            continue
+        dest = assets / name
+        if not dest.exists():
+            url = f"{BASE}/doc/{deliverable.loio}/{deliverable.version or doc.version}/{doc.locale}/{src}"
+            try:
+                request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+                with urllib.request.urlopen(request, timeout=60) as response:
+                    data = response.read()
+                if (
+                    not data
+                    or len(data) < 100
+                    or not data[:4]
+                    in (b"\x89PNG", b"\xff\xd8\xff\xe0", b"\xff\xd8\xff\xe1", b"GIF8", b"RIFF", b"<svg", b"<?xm")
+                ):
+                    log.warning("imagem ignorada (não é figura): %s", src)
+                    continue
+                assets.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(data)
+                time.sleep(0.4)
+            except (urllib.error.URLError, TimeoutError, OSError) as error:
+                log.warning("imagem não baixada %s: %s", src, error)
+                continue
+        el["src"] = f"assets/{name}"
+        el["data-local"] = "1"
+        count += 1
+    return count
+
+
 def extract_help(
     config: Config,
     url: str,
@@ -227,6 +269,7 @@ def extract_help(
     only: str | None = None,
     limit: int | None = None,
     subtree_only: bool = False,
+    images: bool = False,
     client: HelpPortalClient | None = None,
 ) -> RunReport:
     ensure_allowed(url, config)
@@ -273,14 +316,17 @@ def extract_help(
                 "/http.svc/pagecontent",
                 {"deliverable_id": deliverable.id, "buildNo": deliverable.build, "file_path": item.file},
             )
-            markdown = to_markdown(strip_noise(body_only(page.get("body") or ""), config))
-            if not markdown.strip():
-                raise ValueError("página sem conteúdo")
+            soup = strip_noise(body_only(page.get("body") or ""), config)
             loio = item.file.removesuffix(".html")
             source = f"{doc_url}/{deliverable.readable.get(loio, loio)}?version={doc.version}"
             relative = item.relative_file()
             target = out / relative
             target.parent.mkdir(parents=True, exist_ok=True)
+            if images:
+                entry["images"] = download_images(soup, deliverable, doc, target.parent / "assets")
+            markdown = to_markdown(soup)
+            if not markdown.strip():
+                raise ValueError("página sem conteúdo")
             target.write_text(
                 _front_matter(item, source)
                 + f"# {item.titles[-1]}\n\n" * (not markdown.lstrip().startswith("#"))

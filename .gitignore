@@ -16,3 +16,7 @@ knowledge/
 
 # Configuração do alvo (seletores e URL específicos): copie de extractor.example.toml
 extractor.toml
+
+# macOS e backups manuais
+.DS_Store
+*.bak-*

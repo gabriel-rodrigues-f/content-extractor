@@ -98,6 +98,8 @@ class _KnowledgeMarkdown(MarkdownConverter):
 
     def convert_img(self, el, text, parent_tags):
         alt = (el.get("alt") or el.get("title") or "").strip()
+        if el.get("data-local"):  # imagem baixada pelo extrator (--images): referência relativa à nota
+            return f"\n![{alt or 'imagem'}]({el.get('src')})\n<!-- Imagem presente aqui: {alt or 'sem descrição'} -->\n"
         return f"\n<!-- Imagem presente aqui: {alt or 'sem descrição'} -->\n"
 
     def convert_pre(self, el, text, parent_tags):
