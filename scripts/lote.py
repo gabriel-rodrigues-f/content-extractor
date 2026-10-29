@@ -122,6 +122,11 @@ def extract(output: Path, url: str, group: str, args: str = "") -> tuple[bool, s
     if match:
         ok, total, path = match.groups()
         folder = Path(path.strip()).relative_to(output) if path.strip().startswith(str(output)) else path.strip()
+        # Documento grande com poucas páginas indisponíveis na fonte (404 no Help Portal) conta como feito: refazer
+        # 2.000 páginas por 3 que não existem só gasta a rodada (BTP, 28/10/2026). Limite: 5 páginas ou 1 %.
+        missing = int(total) - int(ok)
+        if code != 0 and 0 < missing <= max(5, int(total) // 100):
+            return True, f"{ok}/{total} lições ({missing} indisponíveis na fonte) · {folder}"
         return code == 0, f"{ok}/{total} lições · {folder}"
     reason = re.search(r"Não foi possível continuar: (.+)", text)
     if reason and "sessão expirou" in reason.group(1):
@@ -179,6 +184,8 @@ def pending_items(lines: list[str], groups: str | None) -> list[tuple[str, str, 
         match = ITEM.match(line)
         if not match or group is None or match.group(1) == "x":
             continue
+        if match.group(1) == "!" and "lições" in line:
+            continue  # falhou com resultado parcial gravado: não refaz sozinho (volte a linha para "[ ]" para refazer)
         items.append((group, line, match.group(2), line_args(match.group(3))))
     return items
 
